@@ -74,6 +74,26 @@ address bar's own row list is the way into it (AC101). And a video the user
 starts on the phone now goes to the car's display **by itself** when a car is
 connected — the phone keeps no picture and the car shows the video (AC103).
 
+The **eighth pass** (2026-11-03) is the picture's **home** and the car's
+screen's **speed**. The hand-off hid the phone's picture straight away, so a
+car whose video endpoint was not ready yet left the video on **neither**
+screen — the user's *"sometimes only in the car, sometimes only on the phone"*.
+Now the picture belongs to the **system's** answer: the phone keeps drawing it
+until the system reports the picture on the car, takes it back when the user
+asks, and the ladder that offers the picture again stops the moment the user
+takes it back (AC107, AC108). The banner and the picture can no longer
+disagree — the system is the only writer of the flag.
+
+The car's screen was slow for three separate reasons, all measured: the
+pictures of **different** servers waited for each other (one global gap held
+the whole screen back — 18 ms for eight servers now, against 1.6 s before,
+AC105); the car was told about **every** picture separately and reloaded the
+whole row each time (once per batch now, AC106); and the now-playing artwork
+was **drawn** four times a second while a video played — a 512×512 gradient on
+the main thread, four times a second, which is what made the phone stutter
+(AC109). A video that has just started is not offered to the car a second
+time, because the item was attached with the route already open (AC110).
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -131,7 +151,7 @@ connected — the phone keeps no picture and the car shows the video (AC103).
 | 51 | The picture can be brought back from the car to the phone | `PlaybackManagerTests` |
 | 52 | The player keeps a video output while the phone shows no picture | `PlaybackManagerTests` |
 | 53 | The picture keeps playing when the phone is minimised or locked | `PlaybackManagerTests` |
-| 54 | The car takes the picture — the phone stops drawing it and the output follows | `PlaybackManagerTests` |
+| 54 | The car takes the picture — the phone stops drawing it when the **system** says the car has it, and the output follows | `PlaybackManagerTests` |
 | 55 | The car's screen is a tab bar with the tabs Home, Favorites, Cast and Browser, each with its own title and icon | `CarPlayTabTests` |
 | 56 | The Home tab shows the whole playlist under "All", with the count it really has | `CarPlayTabTests` |
 | 57 | Every category shows its own title, the count it really has and its own artwork | `CarPlayTabTests` |
@@ -181,6 +201,13 @@ connected — the phone keeps no picture and the car shows the video (AC103).
 | 101 | The Browser tab is a **list** — the way into the address bar, the page the phone shows now, and the app's own sites | `CarPlayTemplateTests` |
 | 102 | The tab bar is built from **lists** only — the tab bar rejects a search template and takes the app down with it | `CarPlayTemplateTests` |
 | 103 | A video started on the phone goes to the car's display at once when a car is connected | `PlaybackManagerTests` |
+| 104 | The car's Home tab is built in a moment — the car waits that long for a screen | `CarPlayResponsivenessTests` |
+| 105 | The pictures of **different** servers arrive together — one server's quota does not hold up the others | `CarPlayResponsivenessTests` |
+| 106 | The car is told **once** for a batch of pictures, not once per picture | `CarPlayResponsivenessTests` |
+| 107 | The picture is never on neither screen — the phone keeps it until the system says the car has it | `PlaybackManagerTests` |
+| 108 | The picture the user took back does not jump back to the car | `PlaybackManagerTests` |
+| 109 | The now-playing artwork is drawn once per channel, not four times a second | `PlaybackManagerTests` |
+| 110 | A video that has just started is not offered to the car twice | `PlaybackManagerTests` |
 
 ## Verification
 

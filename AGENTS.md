@@ -599,6 +599,48 @@ it is set in `project.yml`.
   of site tiles on **every keystroke**, at the car's scale — so the tiles are
   cached like the channel tiles are (`CarPlayArtwork.siteTile`).
 
+## Gotchas from the eighth pass (2026-11-03, the picture's home and the car's speed)
+
+- **The picture's home belongs to the system, not to the app.** The hand-off
+  hid the phone's picture the moment it was asked for, and the car only takes
+  the picture when the **system** says so (`isExternalPlaybackActive`). A car
+  whose video endpoint was not ready yet therefore left the video on **neither**
+  screen — the user's *"sometimes only in the car, sometimes only on the
+  phone"*. The phone keeps drawing the picture until the system reports it on
+  the car; the app must never hide its own picture on the strength of its own
+  request. And the flag has **one** writer: `@Published public private(set)`
+  plus a single entry point (`systemSaysPictureIsOnCar(_:)`), because a flag
+  with two writers makes the banner flicker.
+- **A ladder that is not cancelled yanks the picture back.** The re-offer
+  ladder (the car's endpoint appears minutes later) was never stopped, so a
+  picture the user had taken back to the phone jumped back to the car a few
+  seconds later, on its own. Every hand-off and every picture taken back gets
+  a new **generation**, and the ladder checks it before every offer.
+- **The player's flags must be set before the item is attached.** The system
+  looks at the AirPlay route when the item arrives. `allowsExternalPlayback`
+  set *after* `replaceCurrentItem` leaves the picture local for good — the
+  route was already evaluated.
+- **The now-playing artwork must be drawn once.** The now-playing info is
+  refreshed four times a second while a video plays, and the artwork was
+  **drawn** every time: a 512×512 gradient, a symbol and three lines of text
+  on the main thread, four times a second. That is what made the phone
+  stutter. The picture is drawn once per channel and kept, and the info is
+  only handed over when something in it changed (the system counts the
+  seconds itself once the rate is known).
+- **A per-IP quota belongs to the host.** The 0.2 s gap between logo requests
+  exists because of one CDN that answers *429* — and the quota is **that
+  server's**, not the app's. One global gate made the car wait for the *sum*
+  of every server's gaps (eight servers: 1.6 s instead of 18 ms). The gate is
+  per host now; one host still waits its turn.
+- **The car is told once per batch.** A logo that arrives patches the card
+  that shows it, but the **row** is handed to the car again — and a row
+  carries every card in it. Eight pictures meant eight reloads of the same
+  row. The patches are collected and handed over in one batch
+  (`CarPlayCardPatcher`).
+- **Measure before blaming the build.** The Home tab is built in **48 ms** —
+  it was never the bottleneck. The waits were the pictures (one global gate)
+  and the re-sends to the car (one per picture).
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

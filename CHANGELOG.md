@@ -7,6 +7,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The picture was on neither screen — "sometimes only in the car, sometimes
+  only on the phone".** The hand-off hid the phone's picture *straight away*,
+  so a car whose video endpoint was not ready yet left the video on nothing at
+  all, and "Play on Phone" never brought the phone's own picture back. The
+  picture now belongs to the **system's** answer: the phone keeps drawing it
+  until the system reports it on the car, takes it back when the user asks,
+  and the ladder that offers the picture again stops the moment the user
+  takes it back — so a picture taken back no longer jumps to the car on its
+  own a few seconds later. The banner and the picture can no longer disagree:
+  the system is the only writer of the flag.
+
+- **The phone stuttered while a video played.** The now-playing info is
+  refreshed four times a second, and the artwork was **drawn** every time: a
+  512×512 gradient with a symbol and three lines of text, on the main thread,
+  four times a second. The artwork is drawn once per channel and kept, and the
+  info is only handed over when something in it changed.
+
+- **A video that had just started was built twice.** The item was attached
+  with the route already open, so the system had looked at it — and the
+  hand-off offered the picture again straight away, which builds the player a
+  second time. The start is a start now, not a stutter.
+
+- **The car's screen waited for the wrong server.** The pictures were asked
+  for one after another with a gap between them — a gap that exists because
+  of one CDN's per-IP quota. The quota belongs to the **server**, so eight
+  servers' logos no longer wait for each other: eight pictures from eight
+  servers now arrive in 18 ms instead of 1.6 s. The car is also told about a
+  whole row of pictures **once**, instead of reloading the row for every
+  picture that arrives.
+
 - **A video lost its sound when the voice search could not open the
   microphone.** The voice search borrows the audio session (`.record`); when
   the microphone was refused — a car that holds the phone's audio route
