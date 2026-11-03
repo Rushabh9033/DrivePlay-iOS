@@ -24,10 +24,16 @@ public final class PlaybackManager: ObservableObject {
     @Published public var presentationMode: PlayerPresentationMode = .hidden {
         didSet { updateVideoOutput() }
     }
-    @Published public var audioTracks: [String] = []
-    @Published public var selectedAudioTrack: String = "Default"
-    @Published public var subtitleTracks: [String] = ["Off"]
-    @Published public var selectedSubtitleTrack: String = "Off"
+    /// The tracks the picker offers, and the one that is on.
+    ///
+    /// They are read-only from the outside on purpose: the only way to change
+    /// the selection is `selectAudioTrack(named:)` / `selectSubtitleTrack(named:)`,
+    /// which tell AVFoundation about it. A picker that wrote the name itself
+    /// moved a checkmark and changed nothing.
+    @Published public private(set) var audioTracks: [String] = []
+    @Published public private(set) var selectedAudioTrack: String = "Default"
+    @Published public private(set) var subtitleTracks: [String] = ["Off"]
+    @Published public private(set) var selectedSubtitleTrack: String = "Off"
     /// True while the picture is on the car's display instead of the phone's.
     ///
     /// The car's display is an AirPlay destination, so the player reports the
@@ -46,6 +52,16 @@ public final class PlaybackManager: ObservableObject {
     /// The output the frames are drawn into when the phone shows no picture.
     private let videoOutput = VideoOutputHost()
     private var cancellables = Set<AnyCancellable>()
+    /// The groups and options of the item that is playing.
+    ///
+    /// The names the picker shows are not enough to switch a track — only
+    /// `select(_:in:)` tells AVFoundation to change it.
+    private var audioSelectionGroup: AVMediaSelectionGroup?
+    private var subtitleSelectionGroup: AVMediaSelectionGroup?
+    private var audioSelectionOptions: [String: AVMediaSelectionOption] = [:]
+    private var subtitleSelectionOptions: [String: AVMediaSelectionOption] = [:]
+    /// The item the groups above came from.
+    private var currentSelectionItem: AVPlayerItem?
     
     public init() {
         setupAudioSession()
@@ -91,6 +107,9 @@ public final class PlaybackManager: ObservableObject {
             )
         }
         let playerItem = AVPlayerItem(asset: asset)
+        // The tracks of the old item belong to it — the new one starts with
+        // nothing to offer.
+        resetMediaSelectionState()
         playerItem.preferredForwardBufferDuration = 1.0
         playerItem.automaticallyPreservesTimeOffsetFromLive = true
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
@@ -141,6 +160,7 @@ public final class PlaybackManager: ObservableObject {
         cleanupObservers()
 
         let playerItem = AVPlayerItem(url: url)
+        resetMediaSelectionState()
         playerItem.preferredForwardBufferDuration = 1.0
 
         let player: AVPlayer
@@ -311,6 +331,7 @@ public final class PlaybackManager: ObservableObject {
     
     public func closePlayer() {
         cleanupObservers()
+        resetMediaSelectionState()
         videoOutput.detach()
         player?.pause()
         player = nil
@@ -477,26 +498,102 @@ public final class PlaybackManager: ObservableObject {
         }
     }
     
-    private func loadMediaSelectionTracks(item: AVPlayerItem) {
-        guard let asset = item.asset as? AVURLAsset else { return }
+    /// Reads the tracks the item offers.
+    ///
+    /// The groups belong to this item — the selection is applied to it.
+    func loadMediaSelectionTracks(item: AVPlayerItem) {
+        let asset = item.asset
+        self.currentSelectionItem = item
         Task {
-            if let group = try? await asset.loadMediaSelectionGroup(for: .legible) {
+            let legibleGroup = try? await asset.loadMediaSelectionGroup(for: .legible)
+            let audibleGroup = try? await asset.loadMediaSelectionGroup(for: .audible)
+            // Another item took over while the groups were loading — its
+            // tracks are the ones on offer now, not these.
+            guard self.currentSelectionItem === item else { return }
+            if let group = legibleGroup {
                 var subs = ["Off"]
+                var subsOptions: [String: AVMediaSelectionOption] = [:]
                 for option in group.options {
                     subs.append(option.displayName)
+                    subsOptions[option.displayName] = option
                 }
+                self.subtitleSelectionGroup = group
+                self.subtitleSelectionOptions = subsOptions
                 self.subtitleTracks = subs
             }
-            if let audioGroup = try? await asset.loadMediaSelectionGroup(for: .audible) {
+            if let audioGroup = audibleGroup {
                 var audios: [String] = []
+                var audioOptions: [String: AVMediaSelectionOption] = [:]
                 for option in audioGroup.options {
                     audios.append(option.displayName)
+                    audioOptions[option.displayName] = option
                 }
+                self.audioSelectionGroup = audioGroup
+                self.audioSelectionOptions = audioOptions
                 self.audioTracks = audios.isEmpty ? ["Stereo"] : audios
             }
         }
     }
-    
+
+    // MARK: - The tracks the picker offers
+
+    /// Switches the audio to the track with this display name.
+    ///
+    /// Moving the checkmark is not switching a track — `select(_:in:)` is the
+    /// only API that tells AVFoundation to change it. When the track is not
+    /// there, nothing is changed and the previous selection stands.
+    public func selectAudioTrack(named name: String) {
+        guard let group = audioSelectionGroup,
+              let option = audioSelectionOptions[name],
+              let item = currentSelectionItem else { return }
+        item.select(option, in: group)
+        selectedAudioTrack = name
+    }
+
+    /// Switches the subtitles to the track with this display name.
+    ///
+    /// "Off" is synthetic: the group is told to fall back to its default
+    /// option (the "no subtitles" one), or to deselect if it has none.
+    public func selectSubtitleTrack(named name: String) {
+        guard let group = subtitleSelectionGroup, let item = currentSelectionItem else { return }
+        if name == "Off" {
+            if let defaultOption = group.defaultOption, !isNamedSubtitle(defaultOption) {
+                item.select(defaultOption, in: group)
+            } else {
+                item.select(nil, in: group)
+            }
+            selectedSubtitleTrack = "Off"
+            return
+        }
+        guard let option = subtitleSelectionOptions[name] else { return }
+        item.select(option, in: group)
+        selectedSubtitleTrack = name
+    }
+
+    /// True when the option is one of the real subtitle tracks we offer.
+    ///
+    /// The default option of a legible group is the "no subtitles" one, unless
+    /// the stream marks a real subtitle as the default.
+    private func isNamedSubtitle(_ option: AVMediaSelectionOption) -> Bool {
+        option.displayName != "Off" && subtitleSelectionOptions[option.displayName] != nil
+    }
+
+    /// Drops the tracks of the item that was playing.
+    ///
+    /// The groups and their options belong to one `AVPlayerItem`, so a new
+    /// item starts with nothing to offer and the default selection.
+    private func resetMediaSelectionState() {
+        audioSelectionGroup = nil
+        subtitleSelectionGroup = nil
+        audioSelectionOptions = [:]
+        subtitleSelectionOptions = [:]
+        currentSelectionItem = nil
+        audioTracks = []
+        subtitleTracks = ["Off"]
+        selectedAudioTrack = "Default"
+        selectedSubtitleTrack = "Off"
+    }
+
     /// The player's audio session.
     ///
     /// The category is `.playback` and **no options**: the AirPlay and the

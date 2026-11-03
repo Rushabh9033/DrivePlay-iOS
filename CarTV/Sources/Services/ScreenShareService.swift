@@ -28,6 +28,17 @@ public enum ScreenShareState: Equatable {
     case starting
     case sharing
     case failed(String)
+
+    /// True while there is a share to end.
+    ///
+    /// `ScreenShareService.stop()` refuses to run when nothing is being
+    /// shared, so a "stop" row may only be offered while this is true.
+    public var isRunning: Bool {
+        switch self {
+        case .starting, .sharing: return true
+        case .idle, .failed: return false
+        }
+    }
 }
 
 // MARK: - Demo source
@@ -39,7 +50,7 @@ public enum ScreenShareState: Equatable {
 /// the screen capture replaces it.
 final class DemoFrameSource {
 
-    private static let size = CGSize(width: 720, height: 1280)
+    private static let size = ScreenFrameScaler.canvas
     private static let renderer = UIGraphicsImageRenderer(size: size)
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
@@ -153,8 +164,10 @@ public final class ScreenShareService: ObservableObject {
     private var port: UInt16?
     private var isCapturing = false
     private var isStopping = false
-    private let frameLock = NSLock()
-    private var deliveredFrames = false
+    /// The frame counter is touched by the capture's callback, which runs on
+    /// ReplayKit's own thread — it is not main-actor state.
+    private nonisolated(unsafe) let frameLock = NSLock()
+    private nonisolated(unsafe) var deliveredFrames = false
     private let context = CIContext(options: [.cacheIntermediates: false])
 
     /// Starts the screen capture.
@@ -209,18 +222,25 @@ public final class ScreenShareService: ObservableObject {
             state = .failed("This device cannot record the screen. Run the app on a real iPhone.")
             return
         }
-        guard prepare() != nil else { return }
+        guard let writer = prepare() else { return }
 
         isCapturing = true
+        // The capture's callback runs on ReplayKit's own thread, so the writer
+        // and the context are taken here — nothing that belongs to the main
+        // actor may be touched there.
+        let context = self.context
         startCapture(
             { [weak self] sampleBuffer in
-                guard let self, let writer = self.writer else { return }
-                self.markFrameDelivered()
-                Self.consume(sampleBuffer, into: writer, context: self.context)
+                Self.consume(sampleBuffer, into: writer, context: context)
+                self?.markFrameDelivered()
             },
             { [weak self] error in
                 Task { @MainActor in
                     guard let self else { return }
+                    // A newer share may have taken over in the meantime — the
+                    // broadcast replaces the capture. The callback of a capture
+                    // that was stopped must not tear the new share down.
+                    guard self.writer === writer else { return }
                     if let error {
                         NSLog("DRIVEPLAY screen share stopped: %@", error.localizedDescription)
                         self.state = .failed(Self.message(for: error))
@@ -412,13 +432,13 @@ public final class ScreenShareService: ObservableObject {
 
     // MARK: Frames
 
-    private func markFrameDelivered() {
+    private nonisolated func markFrameDelivered() {
         frameLock.lock()
         deliveredFrames = true
         frameLock.unlock()
     }
 
-    private func hasDeliveredFrames() -> Bool {
+    private nonisolated func hasDeliveredFrames() -> Bool {
         frameLock.lock()
         defer { frameLock.unlock() }
         return deliveredFrames

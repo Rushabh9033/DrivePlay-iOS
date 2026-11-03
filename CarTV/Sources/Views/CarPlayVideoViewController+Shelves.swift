@@ -58,7 +58,16 @@ extension InCarAutomotiveController {
             homeShelvesStack.removeArrangedSubview(v)
             v.removeFromSuperview()
         }
-        
+
+        // The favourites are cleared **before** the empty check: a playlist that
+        // lost every channel must not leave the old favourites on the screen.
+        for v in favShelvesStack.arrangedSubviews {
+            favShelvesStack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        favEmptyView.isHidden = !favs.isEmpty
+        favScrollView.isHidden = favs.isEmpty
+
         if allChannels.isEmpty { return }
         
         var categoryMap: [String: [Channel]] = [:]
@@ -81,16 +90,23 @@ extension InCarAutomotiveController {
         }
         
         // Favorites
-        favEmptyView.isHidden = !favs.isEmpty
-        favScrollView.isHidden = favs.isEmpty
-        for v in favShelvesStack.arrangedSubviews {
-            favShelvesStack.removeArrangedSubview(v)
-            v.removeFromSuperview()
-        }
         if !favs.isEmpty {
             let favShelf = buildChannelShelf(title: "Favorites", count: favs.count, channels: favs)
             favShelvesStack.addArrangedSubview(favShelf)
         }
+    }
+
+    /// Opens the channels of a category — the way into the entries the shelf
+    /// does not show.
+    ///
+    /// The shelf carries the first cards of a category; the rest of it has to
+    /// be reachable somewhere, and the header says so ("Movies 248 items ›").
+    func showCategory(_ title: String, channels: [Channel]) {
+        let list = ChannelListViewController(title: title, channels: channels) { [weak self] channel in
+            PlaybackManager.shared.play(channel: channel, presentation: .carMode)
+            self?.showVideo(channel: channel)
+        }
+        present(list, animated: true)
     }
     
     private func buildChannelShelf(title: String, count: Int, channels: [Channel]) -> UIView {
@@ -127,6 +143,7 @@ extension InCarAutomotiveController {
         headerBtn.addAction(UIAction { [weak self] _ in
             self?.onSelectCategoryGrid?(title, channels)
         }, for: .touchUpInside)
+        headerBtn.accessibilityIdentifier = "category:\(title)"
         secView.addSubview(headerBtn)
         
         let hScrollView = UIScrollView()

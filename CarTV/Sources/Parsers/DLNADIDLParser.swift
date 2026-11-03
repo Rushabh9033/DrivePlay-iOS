@@ -16,6 +16,12 @@ public final class DLNADIDLParser: NSObject, XMLParserDelegate, @unchecked Senda
     private var duration: String?
     private var mimeType: String?
     private var items: [DLNADIDLItem] = []
+    /// True while the parser is inside an `<item>`.
+    ///
+    /// The document also carries a `<dc:title>` for the **container** — the
+    /// name of the folder the items live in. That is not the title of the
+    /// first item, and it used to be glued onto it.
+    private var isInsideItem = false
 
     /// Returns the first playable item in the DIDL-Lite document.
     ///
@@ -30,6 +36,7 @@ public final class DLNADIDLParser: NSObject, XMLParserDelegate, @unchecked Senda
         duration = nil
         mimeType = nil
         items = []
+        isInsideItem = false
 
         let parser = XMLParser(data: data)
         parser.delegate = self
@@ -39,7 +46,19 @@ public final class DLNADIDLParser: NSObject, XMLParserDelegate, @unchecked Senda
 
     public func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
         currentElement = elementName.lowercased()
-        if currentElement == "res" {
+        if currentElement == "item" {
+            isInsideItem = true
+            title = ""
+            streamURLString = ""
+            artworkURLString = ""
+            duration = nil
+            mimeType = nil
+        }
+        if currentElement == "res", isInsideItem {
+            // An item may carry several `<res>` elements — one per protocol
+            // and bitrate. Only the first one is the stream; the others would
+            // be concatenated into an address that does not exist.
+            guard streamURLString.isEmpty else { return }
             duration = attributeDict["duration"]
             // protocolInfo is a DLNA options string ("http-get:*:video/mp4:DLNA.ORG_OP=04"),
             // not a MIME type — the MIME is its third colon-separated field.
@@ -52,10 +71,14 @@ public final class DLNADIDLParser: NSObject, XMLParserDelegate, @unchecked Senda
     }
 
     public func parser(_ parser: XMLParser, foundCharacters string: String) {
+        guard isInsideItem else { return }
         switch currentElement {
         case "dc:title", "title":
             title += string
         case "res":
+            // Only the first `<res>` of an item is the stream — the others
+            // would be concatenated into an address that does not exist.
+            guard streamURLString.isEmpty else { return }
             streamURLString += string
         case "upnp:albumarturi", "albumarturi":
             artworkURLString += string
@@ -67,6 +90,7 @@ public final class DLNADIDLParser: NSObject, XMLParserDelegate, @unchecked Senda
     public func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         let element = elementName.lowercased()
         if element == "item" {
+            isInsideItem = false
             if let url = URL(string: streamURLString.trimmingCharacters(in: .whitespacesAndNewlines)) {
                 let artUrl = URL(string: artworkURLString.trimmingCharacters(in: .whitespacesAndNewlines))
                 items.append(DLNADIDLItem(

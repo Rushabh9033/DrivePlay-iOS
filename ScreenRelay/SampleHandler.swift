@@ -27,6 +27,13 @@ public class SampleHandler: RPBroadcastSampleHandler {
     private var announced = false
 
     public override func broadcastStarted(withSetupInfo setupInfo: [String : NSObject]?) {
+        // A second broadcast in the same process has to be announced again —
+        // the latch of the first one would keep the app from ever hearing it.
+        queue.async { [weak self] in
+            self?.announced = false
+            self?.port = nil
+        }
+
         guard let writer = LiveScreenWriter.make() else {
             finishBroadcastWithError(NSError(
                 domain: "com.rushabh.cartvv.screenrelay",
@@ -48,8 +55,13 @@ public class SampleHandler: RPBroadcastSampleHandler {
         self.server = server
         do {
             try server.start { [weak self] boundPort in
-                self?.port = boundPort
-                self?.announce()
+                guard let self else { return }
+                // The port is written on the server's own queue and read on
+                // this one — it is only ever touched on `queue`.
+                self.queue.async {
+                    self.port = boundPort
+                    self.announceNow()
+                }
             }
         } catch {
             finishBroadcastWithError(NSError(
@@ -69,7 +81,10 @@ public class SampleHandler: RPBroadcastSampleHandler {
         writer = nil
         server?.stop()
         server = nil
-        port = nil
+        queue.async { [weak self] in
+            self?.port = nil
+            self?.announced = false
+        }
     }
 
     public override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
@@ -90,6 +105,12 @@ public class SampleHandler: RPBroadcastSampleHandler {
     /// from the Control Center, so the app may not be listening yet — the
     /// announcement is repeated until the app takes it.
     private func announce() {
+        // The bookkeeping runs on `queue`, so the port and the latch are only
+        // ever touched there.
+        queue.async { [weak self] in self?.announceNow() }
+    }
+
+    private func announceNow() {
         guard !announced, let port, let token = server?.token else { return }
         announced = true
         send(port: port, token: token, attempt: 0)

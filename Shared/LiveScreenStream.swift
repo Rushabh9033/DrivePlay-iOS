@@ -59,10 +59,13 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
         set { lock.lock(); readyCallback = newValue; lock.unlock() }
     }
 
-    /// How many fragments the playlist keeps. The window is short on purpose: a
-    /// live playlist must not grow without end and a player only ever needs a
-    /// few seconds of it.
-    private let windowSize = 10
+    /// How many fragments are kept. The playlist lists fewer than this, so a
+    /// player that is a little behind the live edge still finds the segment it
+    /// asks for — a 404 kills the player item for good, and AVFoundation never
+    /// retries.
+    private let storedFragments = 30
+    /// How many fragments the playlist lists.
+    private let advertisedFragments = 10
 
     private init(writer: AVAssetWriter) {
         self.writer = writer
@@ -171,7 +174,11 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
         segmentType: AVAssetSegmentType,
         segmentReport: AVAssetSegmentReport?
     ) {
-        let duration = segmentReport?.trackReports.first?.duration.seconds ?? 1
+        let seconds = segmentReport?.trackReports.first?.duration.seconds ?? 1
+        // An invalid time has no seconds, and `Int(Double.nan)` traps — which
+        // would take the app (or the broadcast extension) down. The duration is
+        // made safe here, once, where it is read.
+        let duration = seconds.isFinite && seconds > 0 ? seconds : 1
         queue.async { [weak self] in
             guard let self else { return }
             // The fragments are served by the HTTP server on another thread, so
@@ -183,8 +190,8 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
             case .separable:
                 self.fragments.append(Fragment(index: self.nextIndex, duration: duration, data: segmentData))
                 self.nextIndex += 1
-                if self.fragments.count > self.windowSize {
-                    self.fragments.removeFirst(self.fragments.count - self.windowSize)
+                if self.fragments.count > self.storedFragments {
+                    self.fragments.removeFirst(self.fragments.count - self.storedFragments)
                 }
             @unknown default:
                 break
@@ -217,16 +224,19 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
         lock.lock()
         defer { lock.unlock() }
         guard let initialisation, !fragments.isEmpty else { return nil }
-        let target = max(1, Int((fragments.map { $0.duration }.max() ?? 1).rounded(.up)))
+        // The playlist lists the newest fragments; the older ones are kept so
+        // that a player which is a little behind still finds what it asks for.
+        let listed = Array(fragments.suffix(advertisedFragments))
+        let target = max(1, Int((listed.map { $0.duration }.max() ?? 1).rounded(.up)))
         var text = """
         #EXTM3U
         #EXT-X-VERSION:7
         #EXT-X-TARGETDURATION:\(target)
-        #EXT-X-MEDIA-SEQUENCE:\(fragments[0].index)
+        #EXT-X-MEDIA-SEQUENCE:\(listed[0].index)
         #EXT-X-MAP:URI="init.mp4"
 
         """
-        for fragment in fragments {
+        for fragment in listed {
             text += "#EXTINF:\(String(format: "%.3f", fragment.duration)),\nfrag-\(fragment.index).m4s\n"
         }
         return Data(text.utf8)
@@ -249,22 +259,23 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     /// The completion runs when the writer is closed — or when it was never
     /// open, which is the case when not a single frame ever arrived.
     func finish(completion: (() -> Void)? = nil) {
-        queue.async { [weak self] in
-            guard let self else {
-                completion?()
-                return
-            }
+        // The writer is captured **strongly**: the owner drops it right after
+        // this call, and a weak capture would let it die before the queued
+        // block runs — the encoder would never be finished and the last
+        // fragment would never be flushed.
+        queue.async { [self] in
             // A writer that never started cannot be finished: AVFoundation throws
             // an NSInternalInconsistencyException, which takes the app down. That
             // is the normal case when the capture delivers no frame at all — the
             // Simulator, or a phone that refuses to record while CarPlay is
             // connected.
-            guard self.writer.status == .writing else {
+            guard writer.status == .writing else {
                 completion?()
                 return
             }
-            self.input?.markAsFinished()
-            self.writer.finishWriting { completion?() }
+            input?.markAsFinished()
+            let assetWriter = writer
+            assetWriter.finishWriting { completion?() }
         }
     }
 }
@@ -319,6 +330,12 @@ final class ScreenStreamServer {
                     return
                 }
                 buffer.append(data)
+                // A request that never ends must not eat the memory: the
+                // server is reachable from the whole local network.
+                guard buffer.count <= 16 * 1024 else {
+                    connection.cancel()
+                    return
+                }
                 guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
                     pump()
                     return
@@ -396,40 +413,60 @@ final class ScreenStreamServer {
 
 // MARK: - Frames
 
-/// Scales a captured frame down to something a car screen can show.
+/// Draws a captured frame onto the canvas the encoder takes.
 ///
-/// The encoder cannot scale: the output size has to match the frames, so the
-/// frame is drawn into a smaller buffer first.
+/// The encoder cannot scale: the output size has to match the frames, and the
+/// size of an `AVAssetWriterInput` cannot change while it is writing — a
+/// frame of another size is dropped, and a rotated phone would freeze the
+/// stream for good. So every frame is drawn onto the **same** canvas: scaled
+/// to fit, centred, with black around it.
 enum ScreenFrameScaler {
 
-    /// The longest edge a car screen is given.
-    static let maximumEdge: CGFloat = 1280
+    /// The canvas every picture is drawn on. A car's screen is landscape, so
+    /// the canvas is too; a portrait phone gets bars on the sides.
+    static let canvas = CGSize(width: 1280, height: 720)
 
     static func scale(_ source: CVPixelBuffer, context: CIContext) -> CVPixelBuffer? {
-        let image = CIImage(cvPixelBuffer: source)
+        fit(CIImage(cvPixelBuffer: source), context: context)
+    }
+
+    /// Draws the picture onto the canvas, scaled to fit and centred.
+    static func fit(_ image: CIImage, context: CIContext) -> CVPixelBuffer? {
         let extent = image.extent
-        let longest = max(extent.width, extent.height)
-        guard longest > 0 else { return nil }
-        let factor = min(1, maximumEdge / longest)
-        let width = Int((extent.width * factor).rounded())
-        let height = Int((extent.height * factor).rounded())
-        guard width > 0, height > 0 else { return nil }
+        guard extent.width > 0, extent.height > 0 else { return nil }
+        let factor = min(canvas.width / extent.width, canvas.height / extent.height)
+        let width = extent.width * factor
+        let height = extent.height * factor
 
         var scaled: CVPixelBuffer?
         guard CVPixelBufferCreate(
             kCFAllocatorDefault,
-            width,
-            height,
+            Int(canvas.width),
+            Int(canvas.height),
             kCVPixelFormatType_32BGRA,
             nil,
             &scaled
         ) == noErr, let scaled else { return nil }
 
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bounds = CGRect(origin: .zero, size: canvas)
+        // The bars around the picture are black.
+        context.render(
+            CIImage(color: CIColor.black).cropped(to: bounds),
+            to: scaled,
+            bounds: bounds,
+            colorSpace: colorSpace
+        )
         context.render(
             image.transformed(by: CGAffineTransform(scaleX: factor, y: factor)),
             to: scaled,
-            bounds: CGRect(x: 0, y: 0, width: width, height: height),
-            colorSpace: CGColorSpaceCreateDeviceRGB()
+            bounds: CGRect(
+                x: (canvas.width - width) / 2,
+                y: (canvas.height - height) / 2,
+                width: width,
+                height: height
+            ),
+            colorSpace: colorSpace
         )
         return scaled
     }

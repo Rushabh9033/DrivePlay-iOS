@@ -6,6 +6,8 @@ public struct VoiceSearchOverlayView: View {
     public var onResult: (String) -> Void = { _ in }
     @ObservedObject var voiceSearch = VoiceSearchManager.shared
     @State private var didStart = false
+    /// The task that asks for the permissions and starts the microphone.
+    @State private var startTask: Task<Void, Never>?
 
     public init(onDismiss: @escaping () -> Void, onResult: @escaping (String) -> Void = { _ in }) {
         self.onDismiss = onDismiss
@@ -63,7 +65,14 @@ public struct VoiceSearchOverlayView: View {
             .padding(.bottom, 24)
         }
         .onAppear { start() }
-        .onDisappear { voiceSearch.stopRecording() }
+        .onDisappear {
+            // The permission prompt can outlive the overlay: without this the
+            // microphone opens *after* the user closed it, and the app sits
+            // there recording in the background.
+            startTask?.cancel()
+            startTask = nil
+            voiceSearch.stopRecording()
+        }
     }
 
     /// Requests the permissions and starts listening. Without this the overlay only
@@ -71,11 +80,15 @@ public struct VoiceSearchOverlayView: View {
     private func start() {
         guard !didStart else { return }
         didStart = true
-        Task { @MainActor in
+        startTask = Task { @MainActor in
             guard await voiceSearch.requestPermissions() else {
+                // The overlay may be gone while the prompt was up.
+                guard !Task.isCancelled else { return }
                 voiceSearch.errorMessage = "Voice search needs microphone and speech recognition permission."
                 return
             }
+            // The permission may have taken a while — the overlay may be gone.
+            guard !Task.isCancelled else { return }
             do {
                 try voiceSearch.startRecording { text in
                     onResult(text)

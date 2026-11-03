@@ -19,7 +19,7 @@ public struct AudioSubtitlePickerSheet: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            playbackManager.selectedAudioTrack = track
+                            playbackManager.selectAudioTrack(named: track)
                         }
                     }
                 }
@@ -36,7 +36,7 @@ public struct AudioSubtitlePickerSheet: View {
                         }
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            playbackManager.selectedSubtitleTrack = track
+                            playbackManager.selectSubtitleTrack(named: track)
                         }
                     }
                 }

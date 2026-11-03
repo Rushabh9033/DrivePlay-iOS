@@ -9,16 +9,26 @@ public final class LocalMediaService: ObservableObject {
     @Published public var localVideos: [LocalVideoItem] = []
     
     private let fileManager = FileManager.default
+    /// Where the vault lives. A test points it at a temporary directory, so it
+    /// never touches the user's own vault.
+    private let storageDirectoryOverride: URL?
+
     private var storageDirectory: URL {
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let videosDir = docs.appendingPathComponent("ImportedVideos", isDirectory: true)
-        if !fileManager.fileExists(atPath: videosDir.path) {
-            try? fileManager.createDirectory(at: videosDir, withIntermediateDirectories: true)
+        let dir: URL
+        if let storageDirectoryOverride {
+            dir = storageDirectoryOverride
+        } else {
+            let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            dir = docs.appendingPathComponent("ImportedVideos", isDirectory: true)
         }
-        return videosDir
+        if !fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
     }
-    
-    public init() {
+
+    public init(storageDirectory: URL? = nil) {
+        self.storageDirectoryOverride = storageDirectory
         loadStoredVideos()
     }
     
@@ -63,7 +73,23 @@ public final class LocalMediaService: ObservableObject {
         return item
     }
 
-    public func addExtractedAudio(fileURL: URL, title: String) async -> LocalVideoItem {
+    /// Imports a file the app itself made — a Photos transfer — and throws the
+    /// temporary copy away afterwards.
+    ///
+    /// The transferable's file is a copy in the temporary directory. The
+    /// import copies it into the vault, so the temporary one has to go —
+    /// otherwise every photo imported leaves a full-size copy behind.
+    public func importTemporaryVideo(from sourceURL: URL) async throws -> LocalVideoItem {
+        defer { try? fileManager.removeItem(at: sourceURL) }
+        return try await importVideoFile(from: sourceURL)
+    }
+
+    /// Copies an extracted audio file into the vault.
+    ///
+    /// The copy is **not** optional: a vault entry that points at a file which
+    /// was never written is a broken entry the user cannot play and cannot
+    /// remove. A failed copy throws instead.
+    public func addExtractedAudio(fileURL: URL, title: String) async throws -> LocalVideoItem {
         let id = UUID()
         let destinationURL = storageDirectory
             .appendingPathComponent("\(id.uuidString)_\(fileURL.lastPathComponent)")
@@ -71,7 +97,7 @@ public final class LocalMediaService: ObservableObject {
             if fileManager.fileExists(atPath: destinationURL.path) {
                 try? fileManager.removeItem(at: destinationURL)
             }
-            try? fileManager.copyItem(at: fileURL, to: destinationURL)
+            try fileManager.copyItem(at: fileURL, to: destinationURL)
         }
 
         let attr = (try? fileManager.attributesOfItem(atPath: destinationURL.path)) ?? [:]

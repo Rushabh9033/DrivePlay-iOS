@@ -189,6 +189,8 @@ extension InCarAutomotiveController {
             sup.bringSubviewToFront(self.view)
         }
         self.view.bringSubviewToFront(browserContainer)
+        // The page stops with the catalogue — see `handleBrowserHome`.
+        self.webView?.stopLoading()
         self.browserHomeScrollView.isHidden = false
         self.webView?.isHidden = true
         self.browserUrlLabel.text = "Enter a URL or search"
@@ -247,6 +249,10 @@ extension InCarAutomotiveController {
     }
     
     @objc public func handleBrowserHome() {
+        // The house button means "back to the catalogue" — the page has to
+        // stop, not just be hidden: a page that keeps loading (or playing)
+        // behind the catalogue burns the battery and the mobile data.
+        self.webView?.stopLoading()
         self.browserHomeScrollView.isHidden = false
         self.webView?.isHidden = true
         self.browserUrlLabel.text = "Enter a URL or search"
@@ -281,8 +287,11 @@ extension InCarAutomotiveController {
             tf.keyboardType = .URL
             tf.autocapitalizationType = .none
         }
-        alert.addAction(UIAlertAction(title: "Go", style: .default) { [weak self] _ in
-            guard let text = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        alert.addAction(UIAlertAction(title: "Go", style: .default) { [weak self, weak alert] _ in
+            // The alert is captured weakly: a strong capture would keep the
+            // alert alive through its own action — the alert holds the action,
+            // the action holds the alert.
+            guard let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
             let finalUrl: URL
             if text.hasPrefix("http://") || text.hasPrefix("https://") {
                 finalUrl = URL(string: text) ?? URL(string: "https://www.google.com")!
@@ -296,6 +305,25 @@ extension InCarAutomotiveController {
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
         present(alert, animated: true)
+    }
+
+    /// Puts the page on the car's display.
+    ///
+    /// The car cannot show a page of its own, so the phone's screen share
+    /// carries it — the same share the car's Cast tab starts.
+    @objc func handleBrowserCast() {
+        ScreenShareService.shared.startForTheCar()
+    }
+
+    /// Makes the page's text bigger or smaller.
+    ///
+    /// The sizes cycle — a car screen is read from a distance, and the page
+    /// rarely knows how big it is going to be shown.
+    @objc func handleBrowserTextSize() {
+        guard let webView else { return }
+        let steps: [CGFloat] = [1.0, 1.25, 1.5, 0.75]
+        let current = steps.firstIndex(where: { abs($0 - webView.pageZoom) < 0.01 }) ?? 0
+        webView.pageZoom = steps[(current + 1) % steps.count]
     }
     
     @objc func handleBrowserScrollUp() {

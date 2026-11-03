@@ -176,7 +176,10 @@ public struct VideoToAudioExtractorView: View {
                 Spacer()
                 
                 // 1-Tap Extract Action Button
-                if !extractor.isExtracting && extractor.lastExtractedItem == nil {
+                // The button stays available after a successful extraction:
+                // the service clears the result when a new extraction starts,
+                // so the sheet can be used again and again.
+                if extractor.canStartExtraction {
                     Button(action: startExtraction) {
                         HStack(spacing: 8) {
                             Image(systemName: "bolt.fill")

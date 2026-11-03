@@ -11,6 +11,7 @@ public enum MainTab: Int, Hashable, CaseIterable {
 public struct MainTabView: View {
     @State private var selectedTab: MainTab = .home
     @ObservedObject var playbackManager = PlaybackManager.shared
+    @ObservedObject var orientationMonitor = DeviceOrientationMonitor.shared
     
     public init() {}
     
@@ -71,10 +72,16 @@ public struct MainTabView: View {
             handlePresentationChange(newMode)
         }
         .onAppear {
+            // The orientation notification is only posted while the device is
+            // generating them. Without this the handler below never runs and
+            // the docked player never rotates into full screen.
+            orientationMonitor.start()
             handlePresentationChange(playbackManager.presentationMode)
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            let orientation = UIDevice.current.orientation
+        .onDisappear {
+            orientationMonitor.stop()
+        }
+        .onChange(of: orientationMonitor.orientation) { orientation in
             if orientation.isLandscape && playbackManager.presentationMode == .docked {
                 playbackManager.enterLandscapeFullscreen()
             } else if orientation == .portrait && playbackManager.presentationMode == .fullscreen {

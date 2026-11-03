@@ -21,6 +21,9 @@ final class ScreenRelayListener {
     var onFailure: ((Error) -> Void)?
 
     private let queue = DispatchQueue(label: "com.rushabh.cartvv.screenrelay.listener")
+    /// The most bytes an announcement may take. The line carries a port and a
+    /// token — a few dozen bytes — so 4 KB is generous.
+    static let maximumAnnouncementLength = 4096
     private var listener: NWListener?
     /// The port the app listens on. The default is the one the broadcast
     /// extension announces to; a different one is only used to prove that a
@@ -80,6 +83,14 @@ final class ScreenRelayListener {
                     if let announced = ScreenRelayEndpoint.parse(line) {
                         self.onStream?(announced.port, announced.token)
                     }
+                    connection.cancel()
+                    return
+                }
+                // The announcement is one short line. A peer that keeps
+                // sending without ever sending a newline must not be able to
+                // grow the buffer without end.
+                guard buffer.count <= Self.maximumAnnouncementLength else {
+                    NSLog("DRIVEPLAY screen relay: the announcement grew past %d bytes — dropped", Self.maximumAnnouncementLength)
                     connection.cancel()
                     return
                 }

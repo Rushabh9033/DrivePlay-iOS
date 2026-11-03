@@ -16,11 +16,14 @@ public struct GroupDetailView: View {
     }
     
     private var filteredChannels: [Channel] {
-        if filterQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // The query is trimmed once and the trimmed value is used for the
+        // match too — a trailing space used to hide every result.
+        let query = filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
             return groupChannels
         } else {
             return groupChannels.filter {
-                $0.name.localizedCaseInsensitiveContains(filterQuery)
+                $0.name.localizedCaseInsensitiveContains(query)
             }
         }
     }

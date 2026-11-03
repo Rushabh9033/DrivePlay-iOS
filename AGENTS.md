@@ -385,6 +385,38 @@ it is set in `project.yml`.
   real store. If the scheme ever shows no configuration, pick the file once in
   *Scheme ▸ Edit Scheme ▸ Run ▸ Options* and Xcode writes the path into the scheme itself.
 
+## Gotchas from the second review (2026-11-03)
+
+- **`AVMediaSelectionGroup` only exists for assets with *alternate renditions*.** A
+  plain file — a WAV, an MP4 with one audio track — has **no** audible media selection
+  group, and neither does an `AVMutableComposition`: its tracks are tracks, not
+  options. So `item.select(_:in:)` cannot be exercised in a unit test without a server
+  that serves HLS with alternate audio renditions. Measured on macOS:
+  `AVURLAsset.loadMediaSelectionGroup(for: .audible)` → `nil`, and
+  `AVMutableComposition.mediaSelectionGroup(forMediaCharacteristic: .audible)` → `nil`.
+  The track picker is therefore pinned by a **contract** test (the selection is
+  read-only from the outside; an unknown track changes nothing) and by the
+  `public private(set)` on `selectedAudioTrack` / `selectedSubtitleTrack` — the
+  compiler, not the test, is what stops a picker from writing the name itself.
+- **`AVMediaSelectionGroup` has no `select(_:in:)`.** The API is
+  `AVPlayerItem.select(_:in:)` — the group is the *second* argument. `group.select(option,
+  in: item)` does not compile.
+- **A `guard` in `didStartElement:` does not stop `foundCharacters:`.** XMLParser
+  delivers the attributes and the text separately, so a guard that skips a second
+  `<res>` element still lets its text be appended to the first one's URL. Both the
+  element callback **and** the text callback have to refuse it.
+- **`UIDevice.current.orientation` only changes while the device is *generating* the
+  notifications.** `beginGeneratingDeviceOrientationNotifications()` has to be called
+  (and `endGeneratingDeviceOrientationNotifications()` when the view goes away) — without
+  it the rotate handler never runs and never says so.
+- **A test that touches the user's own data has to be pointed at a temporary
+  directory.** `LocalMediaService` writes the vault index into `Documents/ImportedVideos`
+  — a device test that imports a file puts a junk entry into the user's vault. The
+  service takes the directory it works in (`LocalMediaService(storageDirectory:)`) so the
+  test never touches the real one.
+- **`CPListTemplate.maximumItemCount` counts the items across *all* sections**, not per
+  section — the budget has to be counted before a section is added, not per section.
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

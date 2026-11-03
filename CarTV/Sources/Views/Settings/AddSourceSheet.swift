@@ -323,21 +323,29 @@ public struct AddSourceSheet: View {
         guard let id = plexPinId else { return }
         isCheckingPlex = true
         Task {
+            // The spinner has to go on every path — a stuck one locks the
+            // "check again" button for good.
+            defer { isCheckingPlex = false }
             let client = PlexClient()
-            if let token = try? await client.checkPin(pinId: id), !token.isEmpty {
-                // Pin authorized! Add Plex source
-                let source = PlaylistSource(
-                    name: "Plex Server",
-                    type: .plex,
-                    urlString: "https://plex.tv",
-                    serverToken: token
-                )
-                playlistStore.addSource(source)
-                isCheckingPlex = false
-                dismiss()
-            } else {
-                isCheckingPlex = false
+            guard let token = try? await client.checkPin(pinId: id), !token.isEmpty else {
                 self.plexStatusMessage = "PIN not authorized yet. Enter \(plexPinCode ?? "") on plex.tv/link, then click check."
+                return
+            }
+            do {
+                // plex.tv is the cloud API, not the media server: the server of
+                // the account has to be found before a source can point at it.
+                guard let server = try await client.preferredServer(authToken: token) else {
+                    self.plexStatusMessage = "No Plex media server found on this account."
+                    return
+                }
+                await playlistStore.addPlexSource(name: server.name, serverUrl: server.address, token: token)
+                if let error = playlistStore.errorMessage {
+                    self.plexStatusMessage = error
+                } else {
+                    dismiss()
+                }
+            } catch {
+                self.plexStatusMessage = "Could not reach plex.tv: \(URLPolicy.message(for: error))"
             }
         }
     }

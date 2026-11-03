@@ -21,7 +21,9 @@ public struct OfflineVaultPlayerView: View {
     @State private var brightnessLevel: Double = Double(UIScreen.main.brightness)
     
     @State private var showVolumeHUD: Bool = false
-    @State private var volumeLevel: Double = 0.5
+    /// The player's own volume. It starts at the player's real value — the
+    /// HUD used to claim 50 % while the audio was playing at 100 %.
+    @State private var volumeLevel: Double = 1.0
     
     @State private var showScrubHUD: Bool = false
     @State private var scrubDeltaSeconds: Double = 0
@@ -314,6 +316,9 @@ public struct OfflineVaultPlayerView: View {
         let fileURL = LocalMediaService.shared.getFileURL(for: item)
         let playerItem = AVPlayerItem(url: fileURL)
         let p = AVPlayer(playerItem: playerItem)
+        // The HUD shows the player's own volume — it used to claim 50 % while
+        // the audio was playing at 100 %.
+        volumeLevel = Double(p.volume)
         self.player = p
         
         // Setup background audio

@@ -96,7 +96,6 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     let browserUrlLabel = UILabel()
     let browserReloadBtn = UIButton(type: .custom)
     let browserTabsBtn = UIButton(type: .custom)
-    let browserFavBtn = UIButton(type: .custom)
     let browserCastBtn = UIButton(type: .custom)
     let browserFullscreenBtn = UIButton(type: .custom)
     let browserAABtn = UIButton(type: .custom)
@@ -143,7 +142,13 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
         setupVideoContainer()
         setupMirrorContainer()
         setupSearchOverlay()
-        
+
+        // The header of a shelf opens the channels of that category. A host may
+        // take that over; by default the list opens here.
+        onSelectCategoryGrid = { [weak self] title, channels in
+            self?.showCategory(title, channels: channels)
+        }
+
         switchTab(.home)
         observeState()
         refreshChannels()

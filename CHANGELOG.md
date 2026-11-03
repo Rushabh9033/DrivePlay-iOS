@@ -7,6 +7,82 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The audio and subtitle picker moved a checkmark instead of a track.** The
+  manager kept the *names* of the tracks and nothing else, so there was no
+  option to hand to AVFoundation: `select(_:in:)` was never called and the
+  stream kept speaking its own language. The real options are kept now, and
+  the selection is read-only from the outside — the only way to change it is
+  the player's own method.
+
+- **A Plex source pointed at plex.tv.** That is the cloud API, not the media
+  server: a source that names it can never list a file. The account's own
+  server is looked up now, and the address on the local network wins over the
+  remote one.
+
+- **The Jellyfin library stopped after a hundred items.** One request with
+  `Limit=100` truncated it silently — the user saw the first hundred and
+  nothing else, with no hint that more existed. The pages are walked now until
+  the server says there are no more. The artwork had no token either, and the
+  image loader cannot send a header — the token rides in the query.
+
+- **One entry that could not be read emptied the whole library.** The library
+  is the one thing the user cannot get back, and the next save overwrote the
+  file with nothing. Every entry is now decoded on its own, and the old copy
+  in `UserDefaults` is only thrown away once the library was really read.
+
+- **The DLNA parser took the title of the folder for the title of the first
+  item, and glued several addresses into one.** A DIDL-Lite document carries a
+  `<dc:title>` for the container, and an item may carry several `<res>`
+  elements — one per protocol and bitrate. The container's name is not an
+  item's name, and only the first `<res>` is the stream.
+
+- **The M3U parser lost unquoted attributes and claimed resolutions the
+  provider never gave.** A playlist that writes `tvg-id=abc123` instead of
+  `tvg-id="abc123"` lost its id — and with it the channel's identity. A
+  channel that says "HD" is no longer labelled "720P".
+
+- **The car's Cast tab had rows that did nothing.** The picture rows need a
+  player: without one "picture on the car" and "pause" look alive and do
+  nothing at all. And "Stop mirroring" was there even when no share was
+  running — now the row only exists while there is something to stop.
+
+- **The car's channel picker dropped everything past the limit without a
+  word.** CarPlay shows the first `maximumItemCount` rows and drops the rest
+  silently, so a category of 500 channels lost everything past the limit. The
+  list is paged now: the last row offers the next page, and every channel is
+  reachable.
+
+- **The car's Home tab could exceed CarPlay's item budget.** The budget is
+  counted over **all** sections, so the tail of a long playlist was cut off
+  without a word. It is counted now, before the section is added.
+
+- **The relay's announcement buffer could grow without end.** The extension
+  sends the address in one line; a peer that kept sending without ever
+  sending the newline grew the buffer for ever. An announcement that passes
+  the limit is dropped.
+
+- **The phone never learned that it had been turned.** The orientation
+  notification is only posted while the device is *generating* them, and
+  nothing ever asked for them — so the docked player never rotated into full
+  screen.
+
+- **A copy that could not happen created a vault entry anyway.** The entry
+  pointed at a file that was never written: a broken entry the user can
+  neither play nor remove. The copy is not optional any more — it throws.
+
+- **Every imported photo left a full-size copy in the temporary folder.** The
+  transferable's file is a copy; the import copies it into the vault, so the
+  temporary one has to go.
+
+- **The extractor could be used exactly once.** The sheet hid its button as
+  soon as a result was on the screen. A result no longer disables the button.
+
+- **The volume HUD claimed 50 % while the audio played at 100 %.** It now
+  shows the player's own volume.
+
+- **A search query with a trailing space hid every result.** The query is
+  trimmed once, and the trimmed value is what every match is made against.
+
 - **A search result picked on the car played nothing.** The car's search is a
   `CPSearchTemplate`: the app hands CarPlay the results and CarPlay hands the
   selection back through `searchTemplate(_:selectedResult:completionHandler:)`
@@ -452,6 +528,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **An 822-line in-car dashboard that nothing showed.** `CarPlayAutomotiveDashboardView`
+  was a whole second implementation of the car's screens — its own tab state,
+  its own shelves, its own artwork — and no code path ever presented it. The
+  car's screens live in `CarPlayTabs` and the scene delegate now; the view is
+  gone.
 - **A second, unused in-car browser.** `CarBrowserView` was a whole second
   implementation of the browser — its own `WKWebView`, its own tab state, its
   own list of preset sites — and nothing in the app ever showed it. It was a

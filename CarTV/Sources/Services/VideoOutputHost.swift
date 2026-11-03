@@ -21,9 +21,16 @@ final class VideoOutputHost {
     var isAttached: Bool { view != nil }
 
     /// The phone's own scene — never the car's.
+    ///
+    /// The CarPlay scene and the external-display scene are `UIWindowScene`s as
+    /// well, and `connectedScenes` is an unordered set. A window on the car's
+    /// scene is never drawn — CarPlay renders templates only — so the player's
+    /// output would be invisible and the picture would stay black. The scene
+    /// role is what tells them apart.
     private static func phoneScene() -> UIWindowScene? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first
+        let phone = scenes.filter { $0.session.role == .windowApplication }
+        return phone.first(where: { $0.activationState == .foregroundActive }) ?? phone.first
     }
 
     /// Gives the player an output. Doing it twice with the same player is a

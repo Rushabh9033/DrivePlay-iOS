@@ -17,6 +17,13 @@ public final class AudioExtractorService: ObservableObject {
     private var progressTimer: Timer?
     
     public init() {}
+
+    /// True when another extraction can be started.
+    ///
+    /// A result on the screen must not disable the button: the sheet used to
+    /// hide it as soon as an extraction had finished, so the extractor could
+    /// be used exactly once.
+    public var canStartExtraction: Bool { !isExtracting }
     
     /// Extract audio from a local video file URL (from Files or Offline Vault)
     public func extractAudio(from videoURL: URL, customTitle: String? = nil) async {
@@ -87,9 +94,16 @@ public final class AudioExtractorService: ObservableObject {
         if exportSession.status == .completed {
             self.progress = 1.0
             self.statusMessage = "Saving to Offline Vault..."
-            let item = await LocalMediaService.shared.addExtractedAudio(fileURL: outputURL, title: sanitizedTitle)
-            self.lastExtractedItem = item
-            self.statusMessage = "Extraction Complete!"
+            do {
+                let item = try await LocalMediaService.shared.addExtractedAudio(fileURL: outputURL, title: sanitizedTitle)
+                self.lastExtractedItem = item
+                self.statusMessage = "Extraction Complete!"
+            } catch {
+                // The extraction worked but the file could not be stored. A
+                // vault entry without a file would be a broken entry.
+                self.statusMessage = ""
+                self.errorMessage = "The audio was extracted but could not be saved: \(error.localizedDescription)"
+            }
             self.isExtracting = false
         } else {
             self.isExtracting = false

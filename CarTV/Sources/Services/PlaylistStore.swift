@@ -47,11 +47,19 @@ public final class PlaylistStore: ObservableObject {
         return order[name] ?? 50
     }
     
+    /// The search query without the spaces around it.
+    ///
+    /// The query is trimmed once, here, and every match is made against the
+    /// trimmed value — a trailing space used to hide every result.
+    public var trimmedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public var groups: [ChannelGroup] {
-        if searchQuery.isEmpty {
+        let q = trimmedSearchQuery
+        if q.isEmpty {
             return cachedGlobalGroups
         }
-        let q = searchQuery.lowercased()
         return cachedGlobalGroups.compactMap { group in
             let filtered = group.channels.filter {
                 $0.name.localizedCaseInsensitiveContains(q) ||
@@ -191,6 +199,35 @@ public final class PlaylistStore: ObservableObject {
         }
     }
     
+    public func addPlexSource(name: String, serverUrl: String, token: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        let client = PlexClient()
+        do {
+            let source = PlaylistSource(
+                name: name.isEmpty ? "Plex Server" : name,
+                type: .plex,
+                urlString: serverUrl,
+                // The token ends up in every stream URL, so it has to be kept
+                // with the other secrets.
+                serverToken: token
+            )
+            let items = try await client.fetchLibraryChannels(serverUrl: serverUrl, token: token, sourceId: source.id)
+            guard !items.isEmpty else {
+                errorMessage = "The Plex server has no playable media."
+                return
+            }
+            sources.append(source)
+            channels.append(contentsOf: items)
+            saveSources()
+            saveChannels()
+        } catch {
+            errorMessage = "Server connection failed: \(URLPolicy.message(for: error))"
+        }
+    }
+
     public func removeSource(_ source: PlaylistSource) {
         sources.removeAll { $0.id == source.id }
         channels.removeAll { $0.sourceId == source.id }
@@ -487,8 +524,29 @@ public final class PlaylistStore: ObservableObject {
     /// secrets the Keychain refused keeps them here: an unsigned build has no
     /// keychain access at all, and losing the password would mean the user has
     /// to type it again after every restart.
+    ///
+    /// The **URL** of a source can carry the secrets as well — the M3U address
+    /// a provider hands out is often `http://user:pass@host/get.php` — so it
+    /// is redacted too, exactly like the URL of a channel.
     private func sourcesData(keepingSecretsFor keeping: Set<UUID>) -> Data? {
-        guard let data = try? JSONEncoder().encode(sources),
+        let redacted = sources.map { source -> PlaylistSource in
+            // A source the Keychain refused keeps everything: the plist is then
+            // the only place its secrets are.
+            guard !keeping.contains(source.id) else { return source }
+            var copy = source
+            if let url = URL(string: source.urlString) {
+                copy.urlString = CredentialRedactor.redact(
+                    url,
+                    credentials: SourceCredentials(
+                        username: source.username,
+                        password: source.password,
+                        serverToken: source.serverToken
+                    )
+                ).absoluteString
+            }
+            return copy
+        }
+        guard let data = try? JSONEncoder().encode(redacted),
               var array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
         for (index, source) in sources.enumerated() where keeping.contains(source.id) {
             array[index]["username"] = source.username
@@ -547,16 +605,11 @@ public final class PlaylistStore: ObservableObject {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let fileURL = docs.appendingPathComponent("saved_channels.json")
 
-        var loaded: [Channel] = []
-        var fromLegacyDefaults = false
-        if let data = try? Data(contentsOf: fileURL),
-           let c = try? JSONDecoder().decode([Channel].self, from: data) {
-            loaded = c
-        } else if let cData = UserDefaults.standard.data(forKey: channelsStorageKey),
-                  let c = try? JSONDecoder().decode([Channel].self, from: cData) {
-            loaded = c
-            fromLegacyDefaults = true
-        }
+        let fileData = try? Data(contentsOf: fileURL)
+        let legacyData = UserDefaults.standard.data(forKey: channelsStorageKey)
+        let read = Self.readChannels(fileData: fileData, legacyData: legacyData)
+        var loaded = read.channels
+        let fromLegacyDefaults = read.fromLegacyBlob
 
         // The file holds the URLs without the credentials: put them back for playback.
         var needsRewrite = fromLegacyDefaults
@@ -567,9 +620,36 @@ public final class PlaylistStore: ObservableObject {
             loaded[index].streamURL = CredentialRedactor.restore(loaded[index].streamURL, credentials: credentials)
         }
         self.channels = loaded
-        // The old plist blob held the URLs in the clear: it is not needed any more.
-        UserDefaults.standard.removeObject(forKey: channelsStorageKey)
+        // The old plist blob held the URLs in the clear: it is not needed any
+        // more — but only once the channels were really read. Removing it
+        // after a failed load would throw the last copy of the library away.
+        if read.removeLegacyBlob {
+            UserDefaults.standard.removeObject(forKey: channelsStorageKey)
+        }
         rebuildIndex()
         if needsRewrite { saveChannels() }
+    }
+
+    /// Reads a library out of the two places it can be.
+    ///
+    /// The file is the current home of the library, the old plist blob the
+    /// fallback. The blob is only thrown away once there is a library to
+    /// keep — removing it after a failed load would throw the last copy of
+    /// the library away.
+    public static func readChannels(fileData: Data?, legacyData: Data?) -> (channels: [Channel], fromLegacyBlob: Bool, removeLegacyBlob: Bool) {
+        var loaded: [Channel] = []
+        if let fileData {
+            // Every channel is decoded on its own: one entry that cannot be
+            // read must not empty the whole library.
+            loaded = Channel.decodeList(from: fileData)
+        }
+        // The old plist blob is the fallback: a file that cannot be read must
+        // not empty the library while the blob still holds it.
+        var fromLegacyBlob = false
+        if loaded.isEmpty, let legacyData {
+            loaded = Channel.decodeList(from: legacyData)
+            fromLegacyBlob = !loaded.isEmpty
+        }
+        return (loaded, fromLegacyBlob, !loaded.isEmpty)
     }
 }

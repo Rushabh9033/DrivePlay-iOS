@@ -45,7 +45,7 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
     public func load(_ input: String) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        
+
         var destination = trimmed
         if destination.lowercased().hasPrefix("http://") || destination.lowercased().hasPrefix("https://") {
             // direct URL
@@ -53,23 +53,40 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
             destination = "https://" + destination
         } else {
             // Google custom search query
-            destination = "https://www.google.com/search?q=" + (destination.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? destination)
+            destination = "https://www.google.com/search?q=" + (destination.addingPercentEncoding(withAllowedCharacters: Self.queryAllowed) ?? destination)
         }
-        
+
+        // A URL that cannot be built is not loaded at all — and the tab must
+        // not be left spinning for ever.
+        guard let url = URL(string: destination) else {
+            self.isLoading = false
+            self.title = "That is not a web address"
+            return
+        }
+
         print("[BrowserTabItem] Loading destination: \(destination)")
         self.urlString = destination
         self.title = "Loading..."
         self.isLoading = true
         self.canGoBack = true
-        
-        if let url = URL(string: destination) {
-            AdBlockerEngine.shared.apply(to: webView.configuration)
-            let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30)
-            webView.load(request)
-        }
-        
+
+        AdBlockerEngine.shared.apply(to: webView.configuration)
+        let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 30)
+        webView.load(request)
+
         BrowserTabManager.shared.updateActiveTabState(url: destination)
     }
+
+    /// The characters a search term may keep.
+    ///
+    /// `CharacterSet.urlQueryAllowed` leaves `&`, `=`, `+` and `?` alone — and
+    /// those are exactly the characters that break a query: a search for
+    /// "a&b=c" would turn into two parameters and the second one would be lost.
+    private static let queryAllowed: CharacterSet = {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#")
+        return allowed
+    }()
     
     public func reload() {
         if webView.url != nil {
@@ -254,6 +271,7 @@ public final class BrowserTabManager: ObservableObject {
     
     public func closeTab(at index: Int) {
         guard index >= 0 && index < tabs.count else { return }
+        let wasActive = index == activeIndex
         tabs.remove(at: index)
         if tabs.isEmpty {
             let emptyTab = BrowserTabItem(title: "Start Page", urlString: "")
@@ -261,8 +279,15 @@ public final class BrowserTabManager: ObservableObject {
             activeIndex = 0
             activeTabURL = ""
         } else {
-            if activeIndex >= tabs.count {
-                activeIndex = tabs.count - 1
+            if wasActive {
+                // The active tab is gone: the one that took its place (or the
+                // one before it) becomes the active one.
+                activeIndex = min(activeIndex, tabs.count - 1)
+            } else if index < activeIndex {
+                // A tab **before** the active one was closed: the active tab
+                // moved down by one, and the index has to follow it — otherwise
+                // the user is suddenly looking at a different tab.
+                activeIndex -= 1
             }
             activeTabURL = tabs[activeIndex].urlString
         }

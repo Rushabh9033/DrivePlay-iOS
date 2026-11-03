@@ -43,6 +43,12 @@ enum CarPlayTab: String, CaseIterable {
 struct CarPlayCastState {
     var pictureOnCar = false
     var isPlaying = false
+    /// True when there is a player at all.
+    ///
+    /// Without one the picture rows have nothing to move: `castToPhone` and
+    /// `togglePlayPause` both give up on a nil player, so the rows would be
+    /// dead buttons.
+    var hasPlayer = false
     var share: ScreenShareState = .idle
     var shareURL: String?
 }
@@ -56,6 +62,15 @@ enum CarPlayTemplates {
 
     /// How many channels a row of cards carries.
     static let cardsPerRow = 8
+
+    /// How many items a section of the Home tab costs.
+    ///
+    /// The card row counts as one item; the "show all" row is another. On the
+    /// older systems the channels are rows of their own.
+    private static var itemsPerSection: Int {
+        if #available(iOS 26.0, *) { return 2 }
+        return cardsPerRow + 1
+    }
 
     // MARK: - Home
 
@@ -79,11 +94,16 @@ enum CarPlayTemplates {
                                     onArtwork: onArtwork))
         }
 
-        // CarPlay shows only the first `maximumSectionCount` sections — a
-        // playlist with hundreds of categories would lose the tail silently.
-        // Nothing is unreachable: every channel is under "All" as well.
-        let room = max(0, CPListTemplate.maximumSectionCount - sections.count)
-        for group in groups.prefix(room) where !group.channels.isEmpty {
+        // CarPlay shows only the first `maximumSectionCount` sections **and**
+        // only the first `maximumItemCount` items across all of them — and it
+        // drops the rest without a word. A playlist with hundreds of
+        // categories would therefore lose its tail silently. Nothing is
+        // unreachable: every channel is under "All" as well.
+        var used = sections.count * itemsPerSection
+        for group in groups {
+            guard sections.count < CPListTemplate.maximumSectionCount else { break }
+            guard used + itemsPerSection <= CPListTemplate.maximumItemCount else { break }
+            guard !group.channels.isEmpty else { continue }
             sections.append(section(title: group.name,
                                     subtitle: "\(group.channels.count) channels",
                                     shown: Array(group.channels.prefix(cardsPerRow)),
@@ -91,6 +111,7 @@ enum CarPlayTemplates {
                                     owner: owner,
                                     prefersVideo: prefersVideo,
                                     onArtwork: onArtwork))
+            used += itemsPerSection
         }
 
         if sections.isEmpty {
@@ -161,24 +182,37 @@ enum CarPlayTemplates {
     static func castSections(state: CarPlayCastState,
                              owner: CarPlayTabActions?,
                              prefersVideo: Bool) -> [CPListSection] {
-        let picture = CPListItem(
-            text: state.pictureOnCar ? "Picture on the car" : "Picture on the phone",
-            detailText: state.pictureOnCar ? "Tap to bring it back to the phone" : "Tap to hand the picture to the car",
-            image: UIImage(systemName: state.pictureOnCar ? "car.fill" : "iphone")
-        )
-        picture.handler = { _, completion in
-            owner?.togglePicture()
-            completion()
-        }
+        // The picture rows only work while there is something to move: with no
+        // player `castToPhone` and `togglePlayPause` give up, so the rows
+        // would look alive and do nothing. Then the tab says what is missing.
+        let pictureRows: [CPListItem]
+        if state.hasPlayer {
+            let picture = CPListItem(
+                text: state.pictureOnCar ? "Picture on the car" : "Picture on the phone",
+                detailText: state.pictureOnCar ? "Tap to bring it back to the phone" : "Tap to hand the picture to the car",
+                image: UIImage(systemName: state.pictureOnCar ? "car.fill" : "iphone")
+            )
+            picture.handler = { _, completion in
+                owner?.togglePicture()
+                completion()
+            }
 
-        let playback = CPListItem(
-            text: state.isPlaying ? "Pause" : "Play",
-            detailText: state.isPlaying ? "The stream stays on the car" : "Start the stream again",
-            image: UIImage(systemName: state.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-        )
-        playback.handler = { _, completion in
-            owner?.togglePlayback()
-            completion()
+            let playback = CPListItem(
+                text: state.isPlaying ? "Pause" : "Play",
+                detailText: state.isPlaying ? "The stream stays on the car" : "Start the stream again",
+                image: UIImage(systemName: state.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+            )
+            playback.handler = { _, completion in
+                owner?.togglePlayback()
+                completion()
+            }
+            pictureRows = [picture, playback]
+        } else {
+            pictureRows = [CPListItem(
+                text: "Nothing is playing",
+                detailText: "Pick a channel on the Home tab",
+                image: UIImage(systemName: "tv.slash")
+            )]
         }
 
         let mirror = CPListItem(
@@ -206,14 +240,18 @@ enum CarPlayTemplates {
             completion()
         }
 
+        // The stop row only exists while there is something to stop: the share
+        // refuses to end when it is not running, so the row would do nothing.
+        let mirrorRows = state.share.isRunning ? [mirror, stop] : [mirror]
+
         return [
-            CPListSection(items: [picture, playback],
+            CPListSection(items: pictureRows,
                           header: "Picture",
                           headerSubtitle: nil,
                           headerImage: nil,
                           headerButton: nil,
                           sectionIndexTitle: nil),
-            CPListSection(items: [mirror, stop],
+            CPListSection(items: mirrorRows,
                           header: "Screen mirroring",
                           headerSubtitle: nil,
                           headerImage: nil,
@@ -347,10 +385,27 @@ enum CarPlayTemplates {
                             channels: [Channel],
                             owner: CarPlayTabActions?,
                             prefersVideo: Bool) -> CPListTemplate {
-        // The list shows as many rows as CarPlay itself is willing to show —
-        // a template with more is silently cut off by the system.
-        let items = channels.prefix(CPListTemplate.maximumItemCount)
-            .map { channelItem($0, owner: owner, prefersVideo: prefersVideo) }
+        // CarPlay shows only the first `maximumItemCount` items and drops the
+        // rest **without a word** — so a category of 500 channels used to lose
+        // everything past the limit. The list is paged instead: the last row
+        // offers the next page, and every channel is reachable.
+        let perPage = max(1, CPListTemplate.maximumItemCount - 1)
+        let page = Array(channels.prefix(perPage))
+        var items = page.map { channelItem($0, owner: owner, prefersVideo: prefersVideo) }
+
+        let remaining = channels.count - page.count
+        if remaining > 0 {
+            let more = CPListItem(text: "More channels (\(remaining) left)",
+                                  detailText: nil,
+                                  image: UIImage(systemName: "ellipsis.circle"))
+            more.accessoryType = .disclosureIndicator
+            more.handler = { _, completion in
+                owner?.pushChannels(title: title, channels: Array(channels.dropFirst(page.count)))
+                completion()
+            }
+            items.append(more)
+        }
+
         let section = CPListSection(items: items, header: nil, sectionIndexTitle: nil)
         return CPListTemplate(title: title, sections: [section])
     }

@@ -1,7 +1,14 @@
 import Foundation
 
 public struct JellyfinClient: Sendable {
-    public init() {}
+    /// The session the client talks to the server with. A test hands in one
+    /// with its own protocol, so a whole library can be served without a
+    /// server.
+    private nonisolated(unsafe) let session: URLSession
+
+    public init(session: URLSession = .shared) {
+        self.session = session
+    }
     
     public struct AuthResponse: Codable, Sendable {
         public let accessToken: String
@@ -41,8 +48,18 @@ public struct JellyfinClient: Sendable {
     
     public struct ItemsResponse: Codable, Sendable {
         public let items: [MediaItem]
+        /// The number of items the server has in total. The paging loop needs
+        /// it to know when it has seen everything.
+        public let totalRecordCount: Int
         enum CodingKeys: String, CodingKey {
             case items = "Items"
+            case totalRecordCount = "TotalRecordCount"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.items = try container.decodeIfPresent([MediaItem].self, forKey: .items) ?? []
+            self.totalRecordCount = try container.decodeIfPresent(Int.self, forKey: .totalRecordCount) ?? 0
         }
     }
     
@@ -60,28 +77,57 @@ public struct JellyfinClient: Sendable {
         let body: [String: String] = ["Username": username, "Pw": password]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await session.data(for: request)
         let resp = try JSONDecoder().decode(AuthResponse.self, from: data)
         return (resp.accessToken, resp.user.id)
     }
     
+    /// How many items one page asks for. The server caps this anyway.
+    private static let pageSize = 200
+
+    /// The whole library, page by page.
+    ///
+    /// A single request with `Limit=100` silently truncated the library: the
+    /// user saw the first hundred items and nothing else, with no hint that
+    /// more existed. The server tells the total, so the pages are walked until
+    /// they are all read.
     public func fetchLibraryChannels(serverUrl: String, token: String, userId: String, sourceId: UUID) async throws -> [Channel] {
         let base = URLPolicy.normalized(serverUrl)
-        guard let url = URL(string: "\(base)/Users/\(userId)/Items?IncludeItemTypes=Movie,Episode&Recursive=true&Limit=100") else {
-            throw URLError(.badURL)
+        var items: [MediaItem] = []
+        var startIndex = 0
+        var total = 0
+
+        // A server that keeps reporting a full page forever would loop for
+        // ever; the guard below stops the loop, this caps it.
+        while startIndex < 10_000 {
+            guard let url = URL(string: "\(base)/Users/\(userId)/Items?IncludeItemTypes=Movie,Episode&Recursive=true&Limit=\(Self.pageSize)&StartIndex=\(startIndex)") else {
+                throw URLError(.badURL)
+            }
+
+            var request = URLRequest(url: url)
+            request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
+
+            let (data, _) = try await session.data(for: request)
+            let resp = try JSONDecoder().decode(ItemsResponse.self, from: data)
+
+            items.append(contentsOf: resp.items)
+            total = resp.totalRecordCount
+            // A short page means the end, whatever the total says.
+            guard resp.items.count >= Self.pageSize else { break }
+            startIndex += resp.items.count
         }
-        
-        var request = URLRequest(url: url)
-        request.setValue(token, forHTTPHeaderField: "X-Emby-Token")
-        
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let resp = try JSONDecoder().decode(ItemsResponse.self, from: data)
-        
-        return resp.items.compactMap { item in
+
+        if total > 0 && items.count < total {
+            NSLog("DRIVEPLAY jellyfin: read %d of %d items", items.count, total)
+        }
+
+        return items.compactMap { item in
             let streamEndpoint = "\(base)/Videos/\(item.id)/stream.mp4?static=true&api_key=\(token)"
             guard let streamURL = URL(string: streamEndpoint) else { return nil }
-            let artworkEndpoint = "\(base)/Items/\(item.id)/Images/Primary?fillWidth=400&quality=90"
-            
+            // The artwork URL is loaded by the image loader, which cannot send
+            // the token header — so the token has to be in the query.
+            let artworkEndpoint = "\(base)/Items/\(item.id)/Images/Primary?fillWidth=400&quality=90&api_key=\(token)"
+
             return Channel(
                 id: UUID(),
                 name: item.name,

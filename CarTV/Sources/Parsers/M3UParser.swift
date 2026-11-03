@@ -127,16 +127,21 @@ public struct M3UParser: Sendable {
             name = nameSubstr.trimmingCharacters(in: .whitespaces)
             let attributesSubstr = line[..<commaIndex]
 
-            // Regex to extract key="value" or key=value
-            let pattern = "([a-zA-Z0-9_-]+)=\"([^\"]*)\""
+            // Regex to extract key="value" or key=value — a provider that does
+            // not quote the value loses its tvg-id and its logo that way.
+            let pattern = "([a-zA-Z0-9_-]+)=(?:\"([^\"]*)\"|([^\\s,]+))"
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let nsStr = String(attributesSubstr) as NSString
                 let matches = regex.matches(in: String(attributesSubstr), range: NSRange(location: 0, length: nsStr.length))
                 for match in matches {
-                    if match.numberOfRanges >= 3 {
-                        let key = nsStr.substring(with: match.range(at: 1)).lowercased()
-                        let value = nsStr.substring(with: match.range(at: 2))
-                        attributes[key] = value
+                    guard match.numberOfRanges >= 4 else { continue }
+                    let key = nsStr.substring(with: match.range(at: 1)).lowercased()
+                    let quoted = match.range(at: 2)
+                    let bare = match.range(at: 3)
+                    if quoted.location != NSNotFound {
+                        attributes[key] = nsStr.substring(with: quoted)
+                    } else if bare.location != NSNotFound {
+                        attributes[key] = nsStr.substring(with: bare)
                     }
                 }
             }
@@ -179,8 +184,12 @@ public struct M3UParser: Sendable {
             return "1080P H.264"
         } else if upper.contains("1080P") || upper.contains("FHD") {
             return "1080P"
-        } else if upper.contains("720P") || upper.contains("HD") {
+        } else if upper.contains("720P") {
             return "720P"
+        } else if upper.contains("HD") {
+            // The channel says "HD" — it does not say "720P", and the app must
+            // not claim a resolution the provider never gave.
+            return "HD"
         }
         return "1080P"
     }

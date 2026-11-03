@@ -17,6 +17,14 @@ records its screen, serves it as a live HLS stream and plays that very stream;
 the car draws it in the now-playing area. The same playlist is served on the
 local network, so a head unit that is not CarPlay can watch it too.
 
+The **second review** (2026-11-03, AC70–AC89) covers what that first round
+missed: the parsers that read a container's title as an item's title, the
+libraries that were cut short or emptied by one bad entry, the servers that
+answered with the first page only, the Plex source that pointed at the cloud
+instead of the account's own server, the picker that moved a checkmark instead
+of a track, the car rows that did nothing, and the phone that never learned
+that it had been turned.
+
 **Every acceptance criterion below has exactly one test.** The test name
 carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
 
@@ -93,6 +101,26 @@ carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
 | 67 | The voice search can take the microphone from the player | `VoiceSearchTests` |
 | 68 | The player's audio session comes back when the voice search ends | `VoiceSearchTests` |
 | 69 | A search result picked on the car plays the channel it stands for | `CarPlaySearchTests` |
+| 70 | The DLNA parser does not take the title of the container for the title of the first item | `ReviewRegressionTests` |
+| 71 | The DLNA parser takes the first `<res>` of an item — the others are not concatenated into it | `ReviewRegressionTests` |
+| 72 | The M3U parser reads an attribute whose value is not quoted | `ReviewRegressionTests` |
+| 73 | The M3U parser does not relabel a channel that says "HD" | `ReviewRegressionTests` |
+| 74 | The library survives one entry that cannot be read | `ReviewRegressionTests` |
+| 75 | The old library is not thrown away while it cannot be read | `ReviewRegressionTests` |
+| 76 | The Jellyfin library is read page by page — it is not cut off after the first page | `ReviewRegressionTests` |
+| 77 | The Jellyfin artwork carries the token — the image loader cannot send a header | `ReviewRegressionTests` |
+| 78 | A Plex source points at the account's own media server, not at plex.tv | `ReviewRegressionTests` |
+| 79 | Only the player changes the track; a track that is not there is not selected | `ReviewRegressionTests` |
+| 80 | The Cast tab has no dead picture rows while there is no player | `ReviewRegressionTests` |
+| 81 | The "stop mirroring" row exists only while there is a share to stop | `ReviewRegressionTests` |
+| 82 | The channel picker pages, so every channel of a category is reachable | `ReviewRegressionTests` |
+| 83 | The Home tab stays inside CarPlay's item budget | `ReviewRegressionTests` |
+| 84 | An announcement that never ends is dropped instead of growing the buffer without end | `ReviewRegressionTests` |
+| 85 | The device generates its orientation notifications — the rotate handler can run at all | `ReviewRegressionTests` |
+| 86 | A copy that cannot happen creates no vault entry | `ReviewRegressionTests` |
+| 87 | The temporary copy of an import is removed — the vault keeps the only copy | `ReviewRegressionTests` |
+| 88 | The extractor can be used again after a result | `ReviewRegressionTests` |
+| 89 | A search query with spaces around it still matches | `ReviewRegressionTests` |
 
 ## Verification
 

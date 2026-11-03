@@ -34,8 +34,119 @@ public struct PlexClient: Sendable {
         }
     }
     
+    /// A section of a Plex library: a folder of movies or of shows.
+    ///
+    /// Every value has a default: a server that leaves one out must not empty
+    /// the whole library.
+    public struct PlexSection: Codable, Sendable {
+        public let key: String
+        public let title: String
+        public let type: String?
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case title
+            case type
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.key = try container.decodeIfPresent(String.self, forKey: .key) ?? ""
+            self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+            self.type = try container.decodeIfPresent(String.self, forKey: .type)
+        }
+    }
+
+    /// One item of a Plex library section.
+    public struct PlexLibraryItem: Codable, Sendable {
+        public let title: String
+        public let ratingKey: String?
+        public let type: String?
+        public let thumb: String?
+        public let media: [PlexMedia]?
+
+        enum CodingKeys: String, CodingKey {
+            case title
+            case ratingKey
+            case type
+            case thumb
+            case media = "Media"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Untitled"
+            self.ratingKey = try container.decodeIfPresent(String.self, forKey: .ratingKey)
+            self.type = try container.decodeIfPresent(String.self, forKey: .type)
+            self.thumb = try container.decodeIfPresent(String.self, forKey: .thumb)
+            self.media = try? container.decodeIfPresent([PlexMedia].self, forKey: .media)
+        }
+
+        /// The path of the file of the item: the first part of its first media.
+        public var firstPartKey: String? {
+            for media in media ?? [] {
+                if let key = media.part?.first?.key, !key.isEmpty { return key }
+            }
+            return nil
+        }
+    }
+
+    /// The files an item is stored in.
+    public struct PlexMedia: Codable, Sendable {
+        public let part: [PlexPart]?
+
+        enum CodingKeys: String, CodingKey {
+            case part = "Part"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.part = try? container.decodeIfPresent([PlexPart].self, forKey: .part)
+        }
+    }
+
+    /// One file of an item.
+    public struct PlexPart: Codable, Sendable {
+        public let key: String?
+        public let container: String?
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case container
+        }
+    }
+
+    /// The `MediaContainer` Plex wraps every list in.
+    ///
+    /// A list is either a `Directory` (the sections of a library) or a
+    /// `Metadata` (the items of a section).
+    private struct PlexList<T: Decodable>: Decodable {
+        let directory: [T]?
+        let metadata: [T]?
+
+        enum CodingKeys: String, CodingKey {
+            case directory = "Directory"
+            case metadata = "Metadata"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.directory = try? container.decodeIfPresent([T].self, forKey: .directory)
+            self.metadata = try? container.decodeIfPresent([T].self, forKey: .metadata)
+        }
+    }
+
+    /// The envelope of a Plex answer.
+    private struct PlexResponse<T: Decodable>: Decodable {
+        let mediaContainer: PlexList<T>
+
+        enum CodingKeys: String, CodingKey {
+            case mediaContainer = "MediaContainer"
+        }
+    }
+
     private let clientIdentifier = "CarTV-iOS-Player"
-    
+
     public func createPin() async throws -> PlexPin {
         // Omitting strong=true returns the official 4-character code (e.g. "RN9H") for plex.tv/link
         guard let url = URL(string: "https://plex.tv/api/v2/pins") else {
@@ -75,5 +186,111 @@ public struct PlexClient: Sendable {
         
         let (data, _) = try await URLSession.shared.data(for: req)
         return (try? JSONDecoder().decode([PlexResource].self, from: data)) ?? []
+    }
+
+    /// The media server of an account: its name and the address it answers on.
+    ///
+    /// plex.tv is the cloud API, not the server — the account's own server has
+    /// to be found before a source can point at it. The address on the local
+    /// network is preferred: a remote address cannot reach a file that is not
+    /// on the public internet.
+    public func preferredServer(authToken: String) async throws -> (name: String, address: String)? {
+        let servers = try await fetchServers(authToken: authToken)
+        return Self.preferredServer(in: servers)
+    }
+
+    /// The media server of an account, out of the resources plex.tv reported.
+    ///
+    /// The local address wins: a remote address cannot reach a file that is
+    /// not on the public internet.
+    public static func preferredServer(in servers: [PlexResource]) -> (name: String, address: String)? {
+        let mediaServers = servers.filter { $0.provides.contains("server") }
+        let candidates = mediaServers.isEmpty ? servers : mediaServers
+        for server in candidates {
+            guard let uri = preferredAddress(of: server) else { continue }
+            let name = server.name.isEmpty ? "Plex Server" : server.name
+            return (name, URLPolicy.normalized(uri))
+        }
+        return nil
+    }
+
+    /// The library of a Plex media server, as channels.
+    ///
+    /// The items are grouped by the section they sit in: a folder of the
+    /// server's library is what a channel list is.
+    public func fetchLibraryChannels(serverUrl: String, token: String, sourceId: UUID) async throws -> [Channel] {
+        let base = URLPolicy.normalized(serverUrl)
+        let sections = try await fetchSections(base: base, token: token)
+
+        var channels: [Channel] = []
+        for section in sections {
+            guard !section.key.isEmpty else { continue }
+            // One unreadable section must not cost the user the whole library.
+            let items = (try? await fetchItems(base: base, key: section.key, token: token)) ?? []
+            for item in items {
+                guard let partKey = item.firstPartKey else { continue }
+                // The player cannot send headers, so the token rides in the URL.
+                let streamURL = URL(string: "\(base)\(partKey)?X-Plex-Token=\(CredentialRedactor.percentEncode(token))")
+                guard let streamURL else { continue }
+                let artwork = item.thumb.flatMap { URL(string: "\(base)\($0)/163840") }
+
+                channels.append(Channel(
+                    name: item.title,
+                    streamURL: streamURL,
+                    groupTitle: section.title,
+                    logoURL: artwork,
+                    tvgId: item.ratingKey,
+                    sourceId: sourceId,
+                    isFavorite: false,
+                    isPlayable: true,
+                    resolutionLabel: "1080P"
+                ))
+            }
+        }
+        return channels
+    }
+
+    /// The sections (the folders) of the library of a server.
+    private func fetchSections(base: String, token: String) async throws -> [PlexSection] {
+        guard let url = URL(string: "\(base)/library/sections") else {
+            throw URLError(.badURL)
+        }
+        let (data, _) = try await URLSession.shared.data(for: serverRequest(url: url, token: token))
+        return Self.decodeList(PlexSection.self, from: data)
+    }
+
+    /// The items of one section of the library of a server.
+    private func fetchItems(base: String, key: String, token: String) async throws -> [PlexLibraryItem] {
+        guard let url = URL(string: "\(base)/library/sections/\(key)/all") else {
+            throw URLError(.badURL)
+        }
+        let (data, _) = try await URLSession.shared.data(for: serverRequest(url: url, token: token))
+        return Self.decodeList(PlexLibraryItem.self, from: data)
+    }
+
+    /// The address a server answers on: the local one when it has one.
+    private static func preferredAddress(of server: PlexResource) -> String? {
+        let usable = (server.connections ?? []).filter { !$0.uri.isEmpty }
+        return (usable.first(where: { $0.local }) ?? usable.first)?.uri
+    }
+
+    /// A request to a media server, with the token of the account.
+    private func serverRequest(url: URL, token: String) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(clientIdentifier, forHTTPHeaderField: "X-Plex-Client-Identifier")
+        request.setValue(token, forHTTPHeaderField: "X-Plex-Token")
+        return request
+    }
+
+    /// Decodes a list of Plex objects, wrapped in a `MediaContainer` or sent
+    /// as a bare array.
+    private static func decodeList<T: Decodable>(_ type: T.Type, from data: Data) -> [T] {
+        let decoder = JSONDecoder()
+        if let response = try? decoder.decode(PlexResponse<T>.self, from: data) {
+            if let list = response.mediaContainer.directory, !list.isEmpty { return list }
+            if let list = response.mediaContainer.metadata, !list.isEmpty { return list }
+        }
+        return (try? decoder.decode([T].self, from: data)) ?? []
     }
 }

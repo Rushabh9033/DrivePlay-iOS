@@ -78,22 +78,20 @@ extension InCarAutomotiveController {
         browserTabsBtn.addTarget(self, action: #selector(handleBrowserHome), for: .touchUpInside)
         browserToolbar.addSubview(browserTabsBtn)
         
-        browserFavBtn.setImage(UIImage(systemName: "star", withConfiguration: regCfg), for: .normal)
-        browserFavBtn.tintColor = UIColor(white: 0.55, alpha: 1.0)
-        browserToolbar.addSubview(browserFavBtn)
-        
         browserCastBtn.setImage(UIImage(systemName: "airplayvideo", withConfiguration: regCfg), for: .normal)
         browserCastBtn.tintColor = UIColor(white: 0.55, alpha: 1.0)
+        browserCastBtn.addTarget(self, action: #selector(handleBrowserCast), for: .touchUpInside)
         browserToolbar.addSubview(browserCastBtn)
-        
+
         browserFullscreenBtn.setImage(UIImage(systemName: "arrow.up.left.and.arrow.down.right", withConfiguration: medCfg), for: .normal)
         browserFullscreenBtn.tintColor = UIColor(white: 0.55, alpha: 1.0)
         browserFullscreenBtn.addTarget(self, action: #selector(handleToggleFullscreen), for: .touchUpInside)
         browserToolbar.addSubview(browserFullscreenBtn)
-        
+
         browserAABtn.setTitle("AA", for: .normal)
         browserAABtn.setTitleColor(UIColor(white: 0.55, alpha: 1.0), for: .normal)
         browserAABtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
+        browserAABtn.addTarget(self, action: #selector(handleBrowserTextSize), for: .touchUpInside)
         browserToolbar.addSubview(browserAABtn)
         
         // Layout Toolbar using AutoLayout
@@ -105,7 +103,6 @@ extension InCarAutomotiveController {
         browserUrlLabel.translatesAutoresizingMaskIntoConstraints = false
         browserReloadBtn.translatesAutoresizingMaskIntoConstraints = false
         browserTabsBtn.translatesAutoresizingMaskIntoConstraints = false
-        browserFavBtn.translatesAutoresizingMaskIntoConstraints = false
         browserCastBtn.translatesAutoresizingMaskIntoConstraints = false
         browserFullscreenBtn.translatesAutoresizingMaskIntoConstraints = false
         browserAABtn.translatesAutoresizingMaskIntoConstraints = false
@@ -145,16 +142,11 @@ extension InCarAutomotiveController {
             browserReloadBtn.widthAnchor.constraint(equalToConstant: 20),
             browserReloadBtn.heightAnchor.constraint(equalToConstant: 20),
             
-            browserTabsBtn.trailingAnchor.constraint(equalTo: browserFavBtn.leadingAnchor, constant: -8),
+            browserTabsBtn.trailingAnchor.constraint(equalTo: browserCastBtn.leadingAnchor, constant: -8),
             browserTabsBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
             browserTabsBtn.widthAnchor.constraint(equalToConstant: 24),
             browserTabsBtn.heightAnchor.constraint(equalToConstant: 24),
-            
-            browserFavBtn.trailingAnchor.constraint(equalTo: browserCastBtn.leadingAnchor, constant: -6),
-            browserFavBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
-            browserFavBtn.widthAnchor.constraint(equalToConstant: 28),
-            browserFavBtn.heightAnchor.constraint(equalToConstant: 28),
-            
+
             browserCastBtn.trailingAnchor.constraint(equalTo: browserFullscreenBtn.leadingAnchor, constant: -6),
             browserCastBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
             browserCastBtn.widthAnchor.constraint(equalToConstant: 28),

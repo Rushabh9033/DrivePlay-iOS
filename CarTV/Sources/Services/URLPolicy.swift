@@ -20,6 +20,13 @@ public enum URLPolicy {
     /// IPv4 ranges, link-local addresses and loopback.
     public static func isLocalHost(_ host: String) -> Bool {
         var h = host.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        // An address may still carry its port: "[::1]:8096" or
+        // "192.168.1.5:8096". The port is not part of the host.
+        if h.hasPrefix("[") {
+            if let close = h.firstIndex(of: "]") { h = String(h[h.startIndex...close]) }
+        } else if h.filter({ $0 == ":" }).count == 1, let colon = h.lastIndex(of: ":") {
+            h = String(h[..<colon])
+        }
         if h.hasPrefix("[") && h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
         if h == "localhost" || h.hasSuffix(".local") { return true }
         if h.contains(":") {
@@ -43,7 +50,11 @@ public enum URLPolicy {
         var h = address.trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = h.range(of: "://") { h = String(h[range.upperBound...]) }
         if let slash = h.firstIndex(of: "/") { h = String(h[..<slash]) }
-        if h.hasPrefix("[") { return h }              // bracketed IPv6 literal
+        if h.hasPrefix("[") {
+            // A bracketed IPv6 literal may carry a port: "[::1]:8096".
+            if let close = h.firstIndex(of: "]") { return String(h[...close]) }
+            return h
+        }
         if h.filter({ $0 == ":" }).count > 1 { return h }  // bare IPv6 literal
         if let colon = h.lastIndex(of: ":") { h = String(h[..<colon]) }
         return h

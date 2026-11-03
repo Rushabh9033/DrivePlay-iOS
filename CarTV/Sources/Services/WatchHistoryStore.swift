@@ -84,7 +84,16 @@ public final class WatchHistoryStore: ObservableObject {
     }
     
     private func save() {
-        let items = history
+        // The URLs hold the credentials, so the copy on disk gets them removed.
+        // The item in memory keeps them — it is restored for playback.
+        let items = history.map { item -> WatchedItem in
+            var copy = item
+            copy.streamURL = CredentialRedactor.redact(
+                item.streamURL,
+                credentials: PlaylistStore.shared.credentials(for: item.sourceId)
+            )
+            return copy
+        }
         let key = storageKey
         Task.detached(priority: .background) {
             if let data = try? JSONEncoder().encode(items) {

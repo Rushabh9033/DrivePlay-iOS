@@ -167,7 +167,10 @@ public struct LocalImportView: View {
                 guard let item = newItem else { return }
                 Task {
                     if let movie = try? await item.loadTransferable(type: VideoTransferable.self) {
-                        _ = try? await localMediaService.importVideoFile(from: movie.url)
+                        // The service removes the temporary copy when it is
+                        // done with it — otherwise every photo imported leaves
+                        // a full-size copy behind in the temp folder.
+                        _ = try? await localMediaService.importTemporaryVideo(from: movie.url)
                     }
                 }
             }

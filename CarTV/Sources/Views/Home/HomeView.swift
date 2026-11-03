@@ -179,9 +179,13 @@ public struct HomeView: View {
     
     // MARK: - Search Results Section
     private var searchResultsSection: some View {
+        // The trimmed query is what the section is shown for, so it must also
+        // be what the channels are matched against — a trailing space used to
+        // show "no results" for a query that had matches.
+        let query = playlistStore.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let matches = playlistStore.channels.filter {
-            $0.name.localizedCaseInsensitiveContains(playlistStore.searchQuery) ||
-            $0.groupTitle.localizedCaseInsensitiveContains(playlistStore.searchQuery)
+            $0.name.localizedCaseInsensitiveContains(query) ||
+            $0.groupTitle.localizedCaseInsensitiveContains(query)
         }
         
         return Section("Search Results (\(matches.count))") {

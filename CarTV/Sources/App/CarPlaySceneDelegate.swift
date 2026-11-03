@@ -140,6 +140,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         artworkRefresh?.cancel()
         artworkRefresh = nil
         // Nobody is left to watch the stream.
+        ScreenShareService.shared.stop()
         ScreenShareService.shared.stopRelay()
         interfaceController = nil
         carWindow = nil
@@ -171,6 +172,13 @@ public final class CarPlaySceneDelegate: UIResponder,
         // The picture and the playback change on their own.
         PlaybackManager.shared.$isPlayingOnCar
             .combineLatest(PlaybackManager.shared.$isPlaying)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshCast() }
+            .store(in: &cancellables)
+
+        // A player that comes or goes changes what the Cast tab may offer:
+        // the picture rows need one.
+        PlaybackManager.shared.$player
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshCast() }
             .store(in: &cancellables)
@@ -222,6 +230,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         return CarPlayCastState(
             pictureOnCar: playback.isPlayingOnCar,
             isPlaying: playback.isPlaying,
+            hasPlayer: playback.player != nil,
             share: share.state,
             shareURL: share.networkPlaylistURL?.absoluteString ?? share.playlistURL?.absoluteString
         )
@@ -305,6 +314,10 @@ public final class CarPlaySceneDelegate: UIResponder,
     }
 
     func stopScreenShare() {
+        // The row is the only stop control on the car, so it has to end the
+        // picture — stopping the listener alone leaves the share running and
+        // the car showing it.
+        ScreenShareService.shared.stop()
         ScreenShareService.shared.stopRelay()
         refreshCast()
     }
