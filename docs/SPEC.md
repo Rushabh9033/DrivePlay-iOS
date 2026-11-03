@@ -25,8 +25,54 @@ instead of the account's own server, the picker that moved a checkmark instead
 of a track, the car rows that did nothing, and the phone that never learned
 that it had been turned.
 
+The **third pass** (2026-11-03, AC90–AC91) covers what the **device** found:
+the artwork URL carried the account's token into the library file and into the
+watch history in the clear, and the watch history's own copy of the URL was
+the redacted one — so "watch again" played a URL with a placeholder in it.
+
+The **fourth pass** (2026-11-03) has no new criteria of its own: it fixes the
+one that was already there but never ran. **AC67** skipped itself whenever the
+microphone permission was missing, so the suite reported *"0 failures"* while
+the voice search died on the phone with *"com.apple.coreaudio.avfaudio error
+1852797029"*. The cause was a race: `setActive(false)` returns before the
+session has really gone, so the switch to the recording category landed on a
+session that was still active, and the route to the microphone — which iOS
+builds in the background — was not there yet when the recorder started. The
+recorder now waits for the route.
+
 **Every acceptance criterion below has exactly one test.** The test name
 carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
+
+The **fifth pass** (2026-11-03, the device) covers what the device found and the
+Simulator could not: the encoder refused every frame the app's own code produced
+(*"FigSampleBufferSerialization err=-19642"*), because the buffer was not
+**IOSurface-backed** — so the screen share never produced a fragment on a real
+phone, while the Simulator's encoder took it without complaint. And the car's
+cards carried a tint of ours, which painted a green frame around every card of
+every category (AC97).
+
+The **sixth pass** (2026-11-03) is the picture on the car's display and the
+car's own browser. The picture was **offered** to the car, never **handed
+over**: the system only looks at the AirPlay route when the picture is offered,
+and the car's video endpoint only exists once the CarPlay scene is up — so the
+offer that happened before that found no endpoint at all (the system's own log
+said *"Local Playback = 1"*) and the car's display stayed black (AC98). The
+route itself cannot be chosen by an app — there is no public API for it — so
+"Play on Car Display" now hands the picture over **at once** when a car is
+connected, and the system's list of displays is only the fallback for a phone
+that has no car. The Browser tab was a list of sites that did nothing; it is
+now a **list** whose first row opens the **address bar** — a search template,
+pushed onto the stack — and what the user types goes to the phone's own
+browser, which applies the rule the phone always applied: a URL is a URL,
+anything else is a search (AC99, AC100).
+
+The **seventh pass** (2026-11-03) is what the car found: the Browser tab had
+been made a **search template**, and the tab bar **rejects** one — it raises
+an `NSException` and the app dies with a SIGABRT at **every** CarPlay connect
+(AC102). The Browser tab is a list and the address bar is **pushed**; the
+address bar's own row list is the way into it (AC101). And a video the user
+starts on the phone now goes to the car's display **by itself** when a car is
+connected — the phone keeps no picture and the car shows the video (AC103).
 
 ## Acceptance criteria
 
@@ -121,6 +167,20 @@ carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
 | 87 | The temporary copy of an import is removed — the vault keeps the only copy | `ReviewRegressionTests` |
 | 88 | The extractor can be used again after a result | `ReviewRegressionTests` |
 | 89 | A search query with spaces around it still matches | `ReviewRegressionTests` |
+| 90 | The artwork loses its token on disk and gets it back — the image loader cannot send a header, so the token rides in the query | `CredentialStorageTests` |
+| 91 | The watch history plays the real URL, not the placeholder | `CredentialStorageTests` |
+| 92 | The categories the Home tab has no room for are still on the car, through "All categories" | `CarPlayTabTests` |
+| 93 | The category list shows every category with the count it really has, and opens its channels | `CarPlayTabTests` |
+| 94 | A logo that arrives patches the card that shows it — the screen is not rebuilt | `CarPlayTabTests` |
+| 95 | The card that shows a logo is drawn from that logo, not from a lookup in a cache that may have thrown it away | `CarPlayArtworkTests` |
+| 96 | A logo the server refuses is asked for again | `CarPlayArtworkTests` |
+| 97 | The car's cards carry no colour of our own — the car paints the card, the artwork carries the logo | `CarPlayArtworkTests` |
+| 98 | With a car connected, "Play on Car Display" hands the picture over at once — the system's list of displays is never shown | `CarOutputSwitchTests` |
+| 99 | The Browser tab's header is a search bar, and what is typed goes to the phone's own browser — a URL is a URL, anything else is a search | `CarPlayTabTests` |
+| 100 | A site of the browser opens on the phone — the car has no web view of its own | `CarPlayTabTests` |
+| 101 | The Browser tab is a **list** — the way into the address bar, the page the phone shows now, and the app's own sites | `CarPlayTemplateTests` |
+| 102 | The tab bar is built from **lists** only — the tab bar rejects a search template and takes the app down with it | `CarPlayTemplateTests` |
+| 103 | A video started on the phone goes to the car's display at once when a car is connected | `PlaybackManagerTests` |
 
 ## Verification
 
@@ -145,13 +205,15 @@ changing it.
 
 ## Non-goals of this milestone
 
-- Making CarPlay show **video**: the scene is template-only, and the video
-  capability has to be granted by Apple (`com.apple.developer.carplay-video`).
-  The request is prepared in `docs/carplay-video-request.md`; it has to be sent
-  from the Apple account that owns the team, because it includes the CarPlay
-  Entitlement Addendum. The chain behind it — capture, encode, serve, play — is
-  finished and tested (AC29–AC32); what the grant adds is the car's video
-  surface.
+- **Choosing** the car's display from the app: the car's display is an AirPlay
+  destination and no public API picks that route — only the system's list of
+  displays does. The app therefore offers the picture to the car (the video
+  capability is granted, and the car draws the picture in its own now-playing
+  area), and falls back to the system's list only when no car is connected.
+- Drawing a **web page** on the car's screen: CarPlay has no web view, and
+  Apple does not allow one. The car's Browser tab is a search bar; the page it
+  opens runs in the app's own browser on the phone, and reaches the car through
+  the phone's screen share.
 - Putting anything behind the Pro upgrade: the app ships with every feature
   unlocked. The purchase layer is in place, the product id and the paywall
   placement are still a product decision.

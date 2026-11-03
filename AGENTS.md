@@ -417,6 +417,188 @@ it is set in `project.yml`.
 - **`CPListTemplate.maximumItemCount` counts the items across *all* sections**, not per
   section — the budget has to be counted before a section is added, not per section.
 
+## Gotchas from the third pass (2026-11-03, the device)
+
+- **A token that rides in a query has to be taken out of *every* URL field, not
+  only the stream URL.** The artwork carries the same token — the image loader
+  cannot send a header, so it rides in the query — and only `streamURL` was
+  redacted before the file was written. The library file (`saved_channels.json`)
+  and the watch history therefore held the account's token in the clear.
+- **The copy in memory keeps the real URL; the copy on disk is the redacted
+  one.** The watch history redacted the URL *into* the item it kept in memory,
+  so the "watch again" row played `…?api_key=__dp_token__` until the app was
+  restarted. Redact on the way to the disk, restore on the way back.
+- **The orientation generation belongs to the device, not to a monitor.**
+  `UIDevice.isGeneratingDeviceOrientationNotifications` is a property of the
+  device: a second monitor that called `endGeneratingDeviceOrientationNotifications()`
+  switched off what the first one had started, and the rotate handler went
+  quiet. A monitor may only stop what it started.
+- **A test that indexes rows by position takes the whole test runner with it.**
+  An index-out-of-range in a test **kills the test host** — on the device that
+  is 12 other tests that never finish. Look the row up by its text and fail
+  the assertion instead.
+- **A test that skips when a permission is missing reports "0 failures".**
+  `VoiceSearchTests` skips without the microphone, so the suite was green
+  while the app's own path — the one the user actually touches — failed. The
+  skip is honest, but the suite then says **nothing** about the feature. The
+  permission is granted on the phone by tapping the mic once; after that the
+  test runs for real, and it is the only thing that caught the bug below.
+
+## Gotchas from the fourth pass (2026-11-03, the microphone)
+
+- **A connected car takes the phone's microphone with the audio route.**
+  While the CarPlay session is up the phone's route is the car's: the output
+  is `CarAudio` and so is the **input** — and the car's input cannot record,
+  so the recorder dies with *"PerformCommand(*ioNode, kAUStartIO)"* →
+  *"com.apple.coreaudio.avfaudio error 1852797029"*. The phone's own
+  microphone has to be asked for by name:
+  `session.setPreferredInput(builtIn)` on the `builtInMic` port out of
+  `session.availableInputs`. The same test passed minutes earlier — with the
+  car **not** attached — so "it is flaky" was the wrong conclusion; print the
+  route (`session.currentRoute.inputs`) and the difference is right there.
+- **The audio route arrives after the session does — wait for it.**
+  `setActive(false)` returns before the session has really gone, so
+  `setCategory(.record)` often lands on a session that is **still active**.
+  iOS then tears the old route down and builds the microphone's route in the
+  background, and an `AVAudioEngine` that starts in that window finds **no
+  input**. Wait for the route instead: `session.currentRoute.inputs` must
+  carry the microphone before the engine starts.
+- **The warning tells you which way the race went.**
+  `AVAudioSession_iOS.mm:978` is the generic "called on the main thread"
+  warning; `SessionCore.mm:631` is the one that says *"while the audio session
+  is active"*. The failing run showed the **second** warning on the category
+  change and the passing run the first. Print the session's state (category,
+  mode, rate, route in and out, the inputs on offer) and the engine's formats
+  before believing a microphone failure — *"1852797029"* says nothing.
+- **A car can lock the phone's microphone for *every* app.** Measured on the
+  device with the CarPlay simulator attached: `engine.start()` fails with
+  *"com.apple.coreaudio.avfaudio error 2003329396"* (`'what'` — the input
+  refuses to open), and `setActive(true)` fails with `'!pri'` (*"priority"* —
+  another session owns the audio). It is **not** the app's code: the same
+  engine fails with **no app code at all** (plain `setCategory(.record)` +
+  `setActive(true)` + `engine.start()`), and it fails in every category
+  (`.record`, `.playAndRecord`, with and without `.allowBluetooth`). The
+  device's session server shows who holds the route — another app's session
+  (`corespeechd`, another app's `PickedRouteForSession` on `CarPlay`).
+  The microphone comes back when the holder lets go, so the test has to
+  **probe** it (`VoiceSearchTests.canOpenTheMicrophone`) and skip with that
+  reason — a skip that says *why* is honest; a test that fails on the
+  system's behaviour is not the app's bug.
+- **A failed microphone must still give the player its session back.**
+  The voice search borrows the audio session (`.record`); if the microphone
+  could not be opened the session was left as `.record` and the video lost
+  its sound. `VoiceSearchManager.startRecording` now restores the player's
+  session on **every** path out.
+
+## Gotchas from the fifth pass (2026-11-03, the car's Home tab)
+
+- **The CarPlay session can die without the app crashing.** The Home tab was
+  built from every one of the playlist's 184 categories, and every category is
+  a row of 8 cards: ~400 pictures the phone had to draw at the car's scale.
+  The build alone took ~7 s, and every logo that arrived rebuilt the whole
+  template again, so the car was sent the entire catalogue hundreds of times
+  over. The CarPlay host's own log says it out loud —
+  `CarPlayTemplateUIHost(FrontBoardServices)[pid] [scheduledTime] Updated
+  resource consumption: 5.842s (58.97%)` — and the scene is torn down when it
+  reaches 100 %. **Watch that line**, not the app's crash log: there is no
+  crash log, because the app never crashed.
+- **A logo that arrives must patch the picture, not rebuild the screen.**
+  The rebuild-per-logo is what killed the session. CarPlay has a documented
+  way to update a picture in place, and it is on the item itself:
+  `CPListItem.setImage:`, `CPListImageRowItem.elements` (a settable array of
+  `CPListImageRowItemElement`, of which `CPListImageRowItemCardElement` is
+  the card) and `CPListSection.headerImage`. The deprecated `updateImages:`
+  is gone in iOS 26 — `elements` replaced it.
+- **`CPListImageRowItem.init(text:cardElements:)` takes
+  `[CPListImageRowItemCardElement]`, but the `elements` property is
+  `[CPListImageRowItemElement]`.** The card is the subclass, so keep the
+  cards in a `[CPListImageRowItemCardElement]` and assign
+  `row.elements = cards.map { $0 as CPListImageRowItemElement }` when a logo
+  lands.
+- **A card is a big picture.** `CPListImageRowItemCardElement.maximumImageSize`
+  is much larger than `CPListItem.maximumImageSize`, and the tiles are cached
+  at the car's scale — so the tile cache has to be bigger than the logo cache
+  (32 MB → 128 MB) or every rebuild redraws every card.
+- **A section's header image belongs to the section, not to a row.** A
+  category's picture is the picture of its first channel, and it is patched
+  through `CPListSection.headerImage` when that logo arrives.
+
+## Gotchas from the sixth pass (2026-11-03, the encoder and the green)
+
+- **The encoder needs an IOSurface-backed pixel buffer — the Simulator does not
+  care.** The app's own frames were created with `CVPixelBufferCreate(…, nil,
+  …)`; the **device's** VideoToolbox then refused every one of them —
+  `FigSampleBufferSerialization err=-19642`, logged by the app as *"a frame
+  could not be appended"* — so the screen share produced **no fragment at all**
+  on a real phone. The Simulator's encoder takes a plain buffer, so the whole
+  chain looked whole there. The fix is one attribute:
+  `[kCVPixelBufferIOSurfacePropertiesKey as String: [:]]`. The test helper in
+  `ScreenShareTests` had it all along — that is why AC29 passed and AC31/32/34/43
+  failed: same encoder, different buffer.
+- **A card's tint paints the frame *and* the text on it.** `CPListImageRowItemCardElement`
+  takes a `tintColor` (nullable): the system paints the card's frame and the
+  subtitle in it. A tint of ours therefore put a green frame around **every
+  card of every category** — pass `nil` and let the car paint its own cards.
+  The same goes for the tab icons: `UIImage(systemName:)` is a template, and
+  `.withTintColor(…, renderingMode: .alwaysOriginal)` takes that away from the
+  system.
+- **A CDN with a per-IP quota is the norm, not the exception.** A third of the
+  playlist's logos live on imgur, which answers **429** when more than about a
+  hundred pictures are asked for in a short while — and the car asks for a whole
+  category at once (453 channels). Measured: 52/451 refused at concurrency 8,
+  16–19/120 at concurrency 2–6; with a **0.25 s gap** between requests, 194/200
+  came back. So the pictures are asked for **one after another** (a gate, not a
+  queue), a refused one is asked for again (3 attempts), and a card is drawn
+  from **the logo that arrived** — never from a cache lookup, because the logo
+  cache is bounded and can come back empty for a picture it was just handed.
+
+## Gotchas from the seventh pass (2026-11-03, the picture and the car's browser)
+
+- **The AirPlay route is looked at only when the picture is offered.** The
+  system's own log shows the evaluation: `airplayRoute_updateRouteInformation
+  … Selected endpoint from routing context … Local Playback = 1`. It happens
+  when the playback item is created, and it is not repeated by itself — so a
+  picture offered **before** the car's video endpoint exists finds no endpoint
+  and stays on the phone, and nothing else makes the system look again.
+  `replaceCurrentItem(with:)` — even with the *same* item — is what makes the
+  system build a new player and look at the route again (the app's
+  `castToPhone()` already relied on it).
+- **The car's video endpoint arrives *after* the CarPlay scene connects.**
+  Measured on the device: the endpoint "CarPlay (ScreenMain)" was registered
+  two minutes after the first tap, and no route evaluation followed it — so
+  the picture has to be offered **again and again** for a while, not once.
+- **No public API picks an AirPlay route.** `AVRoutePickerView` is the only
+  control the system gives; `CPSessionConfiguration.supportsVideoPlayback`
+  (iOS 26.4+) exists but the app cannot get an instance of it — there is no
+  accessor on `CPInterfaceController`, on the scene, or on UIKit. So the app
+  can only *offer* the picture, and the route the user picks is the system's
+  own. With a car connected the button therefore hands the picture over
+  directly instead of showing the list, which is the only thing the user does
+  not want to see.
+- **A `CPSearchTemplate` can be a tab, and it has no `updateSections`.** ←
+  **WRONG — corrected 2026-11-03.** The **compiler** takes any `CPTemplate`,
+  but the **runtime does not**: `-[CPTabBarTemplate validateTemplates:]`
+  **raises an `NSException`** when one of the templates is a search template,
+  and the app dies with **SIGABRT** at *every* CarPlay scene connect. The
+  device's crash reports say so plainly (`CarTV-2026-11-03-173042.ips` and
+  five more the same evening):
+
+  ```
+  objc_exception_throw → +[NSException raise:format:] → -[CPTabBarTemplate validateTemplates:]
+  ```
+
+  The tab bar takes **lists only**, and the address bar is **pushed onto the
+  stack** (`pushTemplate`) instead of being a tab. The rule is pinned in the
+  compiler, not in a comment: `CarPlaySceneDelegate.makeTabBar(_ templates:
+  [CPListTemplate])` — a search template cannot be passed to it at all.
+  A search template's results still only exist through the delegate's
+  completion handler, so the app remembers what each result stands for (the
+  item's own `ObjectIdentifier`), and the search template's delegate is
+  **`weak`** — the app has to hold it.
+- **A tile that is drawn is a tile that is paid for.** The browser draws a row
+  of site tiles on **every keystroke**, at the car's scale — so the tiles are
+  cached like the channel tiles are (`CarPlayArtwork.siteTile`).
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

@@ -7,6 +7,114 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A video lost its sound when the voice search could not open the
+  microphone.** The voice search borrows the audio session (`.record`); when
+  the microphone was refused — a car that holds the phone's audio route
+  refuses it for **every** app — the session was left as `.record` and the
+  player's sound never came back. The player's session is restored on every
+  path out now.
+
+- **The picture never reached the car's display.** The app offered the stream
+  to the car, but the system only looks at the AirPlay route **when the
+  picture is offered** — and the car's video endpoint only exists once the
+  CarPlay scene is up. The offer that happened before that found no endpoint
+  at all (the system's own log said *"Local Playback = 1"*) and the car's
+  screen stayed black. The picture is offered again at once, and again a
+  moment, a few moments and half a minute later, until the system reports it
+  on the car.
+
+- **"Play on Car Display" showed the system's list of displays.** The app
+  cannot pick an AirPlay route — there is no public API for it — so the
+  button offered the list of screens every time. With a car connected the
+  picture now goes there at once and the list is never shown; without a car
+  the list is still the only way to reach a display, so it stays.
+
+- **The car's Browser tab was a list of sites that did nothing, and it had
+  no address bar.** It is now a **list** whose first row opens the **address
+  bar** — a search template — with the sites of the app's own catalogue, the
+  page the phone shows now, and what the user types going to the app's own
+  browser on the phone (a URL is a URL, anything else is a search).
+
+- **The app died at every CarPlay connect.** The Browser tab was a search
+  template, and the tab bar **rejects** one: `-[CPTabBarTemplate
+  validateTemplates:]` raises an `NSException` and the process takes a
+  **SIGABRT** (the device's crash reports show the exact stack). The Browser
+  tab is a list now, and the address bar is **pushed** onto the stack. The
+  tab bar is built through `makeTabBar(_ templates: [CPListTemplate])`, so
+  the compiler itself refuses a search template there.
+
+- **The screen share produced nothing on a real phone.** The encoder refused
+  every frame the app produced — *"FigSampleBufferSerialization err=-19642"*,
+  logged as *"a frame could not be appended"* — because the pixel buffer was
+  not **IOSurface-backed**. The Simulator's encoder takes a plain buffer, so
+  the chain looked whole there and only the phone showed the hole: no
+  fragment, no playlist, no picture on the car. Both the captured frame and
+  the demo picture now go through the same IOSurface-backed canvas.
+
+- **The channel logos never reached the car.** A third of the playlist's logos
+  live on a CDN that answers **429** when more than about a hundred pictures
+  are asked for in a short while — and the car asks for a whole category at
+  once. A refused logo was never asked for again, so the card kept its
+  initials for ever. The pictures are now asked for one after another, a
+  refused one is asked for again, and a card is drawn from **the logo that
+  arrived** rather than from a cache lookup that can come back empty.
+
+- **Every card on the car had a green frame around it.** The card's tint
+  paints the frame *and* the text on it, so our green was on every card of
+  every category. The car paints its own cards now — the artwork carries the
+  logo and nothing else.
+
+- **The car's Home tab took the CarPlay session down.** The app did not crash
+  — the **session** died: the Home tab was built from every one of the
+  playlist's 184 categories, and every category is a row of 8 cards, so the
+  screen was ~400 pictures the phone had to draw at the car's scale. The build
+  alone took about 7 seconds, and every logo that arrived rebuilt the whole
+  template again, so the car was sent the entire catalogue hundreds of times
+  over — the CarPlay host's resource consumption climbed from 7 % to 59 % in
+  about a second and the scene was torn down. The Home tab now shows 12
+  categories, the rest are behind **"All categories (N)"** (every one of them,
+  with its real count, and a way into its channels), and a logo that arrives
+  **patches the card that shows it** instead of rebuilding the screen.
+
+- **The car's cards showed the same initials instead of the channel's own
+  logo.** The artwork was fetched, but the screen was never told about it: the
+  picture was only ever used for the *first* build of a card, and a logo that
+  arrived later was thrown away. The row, the card and the category's header
+  are now patched in place (`CPListItem.setImage:`, `CPListImageRowItem
+  .elements`, `CPListSection.headerImage`), so the car shows the **real**
+  channel logos as they arrive.
+
+- **The microphone did not work.** The voice search died with *"com.apple
+  .coreaudio.avfaudio error 1852797029"*. A connected car takes the phone's
+  audio route — output **and input** — and the car's input cannot record, so
+  the recorder was pointed at the car. It now asks for the phone's own
+  microphone by name, and waits for the route to carry it before the engine
+  starts.
+
+- **The account's token was written to the library file and to the watch
+  history in the clear.** The image loader cannot send a header, so the token
+  rides in the artwork's query — and only the *stream* URL was taken out of it
+  before the file was written. The artwork carries the same token, so the
+  library file (`saved_channels.json`) and the watch history held it in the
+  clear. Both are taken out now and put back when the channel is played.
+
+- **"Watch again" played a URL with a placeholder in it.** The watch history
+  kept the *redacted* URL in memory, so the row played
+  `…stream.mp4?api_key=__dp_token__` until the app was restarted. The item in
+  memory keeps the real URL; the copy on disk is the one without the secrets.
+
+- **One Plex server's remote address beat another's local one.** The local
+  address won *within* a server's list of connections, but not *across* the
+  servers: the first server with any address at all was taken, so a server
+  that could only be reached from outside the network won over one that
+  answers on the local network. The local one comes first now.
+
+- **A monitor stopped the orientation notifications it did not start.** The
+  generation of the orientation notifications belongs to the device, not to a
+  monitor: a second monitor that stopped switched off what the first one had
+  started, and the rotate handler went quiet. A monitor now only stops what it
+  started.
+
 - **The audio and subtitle picker moved a checkmark instead of a track.** The
   manager kept the *names* of the tracks and nothing else, so there was no
   option to hand to AVFoundation: `select(_:in:)` was never called and the
@@ -342,6 +450,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead.
 
 ### Added
+
+- **A video started on the phone goes to the car's display by itself.** When a
+  car is connected, a video the user starts on the phone is handed over to the
+  car at once — the phone keeps no picture and the car shows the video. A
+  video started *by* the car is left alone: the car already asked for it.
 
 - **A switch between the car's display and the phone.** The car's display is an
   AirPlay destination — a CarPlay video app has to support AirPlay video
