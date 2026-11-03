@@ -99,4 +99,26 @@ final class PlaybackManagerTests: XCTestCase {
         XCTAssertEqual(manager.player?.allowsExternalPlayback, true)
         XCTAssertEqual(manager.presentationMode, .hidden)
     }
+
+    /// AC103: a video the user starts on the phone goes to the car's display
+    /// at once — the car is there, so the picture belongs to it.
+    func test_AC103_a_video_started_on_the_phone_goes_to_the_car_at_once() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC103",
+                              streamURL: URL(string: "https://example.com/ac103.m3u8")!)
+
+        manager.isCarConnected = true
+        manager.play(channel: channel, presentation: .docked)
+
+        XCTAssertEqual(manager.presentationMode, .hidden,
+                       "the phone keeps no picture — the car shows the video")
+        XCTAssertTrue(manager.hasVideoOutput,
+                      "the item needs an output of its own, or the car's display stays black")
+        XCTAssertEqual(manager.player?.allowsExternalPlayback, true)
+
+        // Without a car the video stays on the phone.
+        manager.isCarConnected = false
+        manager.play(channel: channel, presentation: .docked)
+        XCTAssertEqual(manager.presentationMode, .docked)
+    }
 }

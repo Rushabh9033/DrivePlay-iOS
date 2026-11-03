@@ -317,10 +317,21 @@ final class ReviewRegressionTests: XCTestCase {
         let connection = NWConnection(host: .ipv4(.loopback), port: controlPort, using: .tcp)
         let ready = expectation(description: "the connection is up")
         let dropped = expectation(description: "the connection was dropped")
+        // The connection can report the drop twice — once as `.failed`, once
+        // as `.cancelled` — and an expectation that is fulfilled twice throws
+        // inside the handler, which kills the whole test run.
+        let lock = NSLock()
+        var hasDropped = false
         connection.stateUpdateHandler = { state in
             switch state {
-            case .ready: ready.fulfill()
-            case .failed, .cancelled: dropped.fulfill()
+            case .ready:
+                ready.fulfill()
+            case .failed, .cancelled:
+                lock.lock()
+                let first = !hasDropped
+                hasDropped = true
+                lock.unlock()
+                if first { dropped.fulfill() }
             default: break
             }
         }
@@ -347,17 +358,17 @@ final class ReviewRegressionTests: XCTestCase {
         let monitor = DeviceOrientationMonitor()
         // The app itself may be generating them already — leave it as it was.
         let wasGenerating = UIDevice.current.isGeneratingDeviceOrientationNotifications
+        defer {
+            if wasGenerating { UIDevice.current.beginGeneratingDeviceOrientationNotifications() }
+        }
 
         monitor.start()
         XCTAssertTrue(UIDevice.current.isGeneratingDeviceOrientationNotifications,
                       "the rotate handler would never run")
 
         monitor.stop()
-        XCTAssertFalse(UIDevice.current.isGeneratingDeviceOrientationNotifications)
-
-        if wasGenerating {
-            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-        }
+        // The monitor must not switch off generation it did not start.
+        XCTAssertEqual(UIDevice.current.isGeneratingDeviceOrientationNotifications, wasGenerating)
     }
 
     // MARK: - The vault
@@ -458,12 +469,14 @@ final class ReviewRegressionTests: XCTestCase {
 
         func play(channel: Channel) {}
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
+        func pushCategories(title: String, categories: [ChannelGroup]) {}
         func presentSearch() {}
         func togglePicture() {}
         func togglePlayback() {}
         func startScreenShare() {}
         func stopScreenShare() {}
-        func openOnPhone(url: String) {}
+        func pushBrowserAddressBar() {}
+        func openOnPhone(address: String) {}
     }
 }
 

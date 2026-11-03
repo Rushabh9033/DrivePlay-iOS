@@ -7,7 +7,9 @@ public struct WatchedItem: Identifiable, Codable, Hashable, Sendable {
     public let name: String
     public var streamURL: URL
     public let groupTitle: String
-    public let logoURL: URL?
+    /// The artwork — the token rides in it, so it is redacted on the way to
+    /// the disk and restored on the way back, exactly like the stream URL.
+    public var logoURL: URL?
     public let resolutionLabel: String
     public let watchedAt: Date
     
@@ -41,6 +43,27 @@ public final class WatchHistoryStore: ObservableObject {
     @Published public private(set) var history: [WatchedItem] = []
     private let storageKey = "cartv_playlist_watch_history"
     
+    /// The item as it is written to the disk.
+    ///
+    /// The URLs hold the credentials, so the copy on disk gets them removed:
+    /// the stream URL **and** the artwork — the image loader cannot send a
+    /// header, so the token rides in the artwork's query as well.
+    static func redactedForDisk(_ item: WatchedItem, credentials: SourceCredentials?) -> WatchedItem {
+        var copy = item
+        copy.streamURL = CredentialRedactor.redact(item.streamURL, credentials: credentials)
+        copy.logoURL = item.logoURL.map { CredentialRedactor.redact($0, credentials: credentials) }
+        return copy
+    }
+
+    /// The item as it is read back from the disk: the secrets are back in the
+    /// URLs.
+    static func restoredForPlayback(_ item: WatchedItem, credentials: SourceCredentials?) -> WatchedItem {
+        var copy = item
+        copy.streamURL = CredentialRedactor.restore(item.streamURL, credentials: credentials)
+        copy.logoURL = item.logoURL.map { CredentialRedactor.restore($0, credentials: credentials) }
+        return copy
+    }
+
     public init() {
         load()
     }
@@ -53,11 +76,11 @@ public final class WatchHistoryStore: ObservableObject {
             channelId: channel.id,
             sourceId: channel.sourceId,
             name: channel.name,
-            // The stored URL holds no credentials: they live in the Keychain.
-            streamURL: CredentialRedactor.redact(
-                channel.streamURL,
-                credentials: PlaylistStore.shared.credentials(for: channel.sourceId)
-            ),
+            // The item in memory keeps the **real** URLs: the copy on disk
+            // gets them removed (see `save()`), and `load()` puts them back.
+            // Redacting them here would leave the "watch again" row playing
+            // a URL with the placeholder in it.
+            streamURL: channel.streamURL,
             groupTitle: channel.groupTitle,
             logoURL: channel.logoURL,
             resolutionLabel: channel.resolutionLabel,
@@ -87,12 +110,7 @@ public final class WatchHistoryStore: ObservableObject {
         // The URLs hold the credentials, so the copy on disk gets them removed.
         // The item in memory keeps them — it is restored for playback.
         let items = history.map { item -> WatchedItem in
-            var copy = item
-            copy.streamURL = CredentialRedactor.redact(
-                item.streamURL,
-                credentials: PlaylistStore.shared.credentials(for: item.sourceId)
-            )
-            return copy
+            Self.redactedForDisk(item, credentials: PlaylistStore.shared.credentials(for: item.sourceId))
         }
         let key = storageKey
         Task.detached(priority: .background) {
@@ -107,8 +125,8 @@ public final class WatchHistoryStore: ObservableObject {
            var items = try? JSONDecoder().decode([WatchedItem].self, from: data) {
             // The stored URLs hold no credentials: put them back for playback.
             for index in items.indices {
-                items[index].streamURL = CredentialRedactor.restore(
-                    items[index].streamURL,
+                items[index] = Self.restoredForPlayback(
+                    items[index],
                     credentials: PlaylistStore.shared.credentials(for: items[index].sourceId)
                 )
             }

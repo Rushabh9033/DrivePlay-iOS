@@ -14,12 +14,21 @@ public final class DeviceOrientationMonitor: ObservableObject {
 
     private var token: NSObjectProtocol?
 
+    /// True when **this** monitor is the one that started the generation.
+    ///
+    /// The generation is a property of the device, not of a monitor: a second
+    /// monitor that stops must not switch off what the first one started.
+    private var ownsGeneration = false
+
     public init() {}
 
     /// Starts the notifications. Calling it twice is harmless.
     public func start() {
         guard token == nil else { return }
-        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        if !UIDevice.current.isGeneratingDeviceOrientationNotifications {
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            ownsGeneration = true
+        }
         token = NotificationCenter.default.addObserver(
             forName: UIDevice.orientationDidChangeNotification,
             object: nil,
@@ -36,7 +45,11 @@ public final class DeviceOrientationMonitor: ObservableObject {
             NotificationCenter.default.removeObserver(token)
         }
         token = nil
-        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        // Only what this monitor started is stopped again.
+        if ownsGeneration {
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+            ownsGeneration = false
+        }
     }
 
     deinit {

@@ -444,7 +444,12 @@ enum ScreenFrameScaler {
             Int(canvas.width),
             Int(canvas.height),
             kCVPixelFormatType_32BGRA,
-            nil,
+            // The buffer has to be **IOSurface-backed**. A plain one is refused
+            // by the device's encoder — "FigSampleBufferSerialization err=-19642"
+            // — and every frame is dropped, so the share never produces a
+            // fragment. The Simulator's encoder takes it either way, which is
+            // why the chain looked whole there.
+            [kCVPixelBufferIOSurfacePropertiesKey as String: [:]] as CFDictionary,
             &scaled
         ) == noErr, let scaled else { return nil }
 

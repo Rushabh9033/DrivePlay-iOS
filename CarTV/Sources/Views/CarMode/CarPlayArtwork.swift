@@ -7,13 +7,10 @@ import UIKit
 ///
 /// CarPlay renders templates, so the app cannot paint the system's rows. What it
 /// *can* paint is the artwork it hands over — and that artwork carries the
-/// design: a charcoal tile, the logo at its own aspect ratio and the green
-/// accent.
+/// design: a charcoal tile and the logo at its own aspect ratio.
 enum CarPlayPalette {
     /// The card behind a logo.
     static let tile = UIColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1)
-    /// The green the reference interface uses for the active marker.
-    static let accent = UIColor(red: 0.18, green: 0.82, blue: 0.35, alpha: 1)
     static let white = UIColor.white
 }
 
@@ -38,11 +35,26 @@ final class CarPlayArtwork {
     /// The drawn tiles, so a rebuilt screen does not draw every card again.
     private let tiles = NSCache<NSString, UIImage>()
     private var inFlight = Set<String>()
+    /// The callers that are waiting for a logo that is already on its way.
+    private var waiters: [String: [(UIImage?) -> Void]] = [:]
     private let lock = NSLock()
+
+    /// The pictures are asked for one after another — see `fetch`.
+    private let gate = DispatchQueue(label: "com.rushabh.cartvv.artwork")
+    /// When the next picture may go out.
+    private var nextRequest = Date.distantPast
+    /// The gap between two logo requests.
+    private static let requestGap: TimeInterval = 0.2
+    /// How many times a picture is asked for before it is given up on.
+    private static let fetchAttempts = 3
 
     init() {
         cache.totalCostLimit = 32 * 1024 * 1024
-        tiles.totalCostLimit = 32 * 1024 * 1024
+        // A card is drawn for the **car's** screen, so it is a big picture —
+        // and a screen of them is bigger than the logo cache. A limit that is
+        // too small makes the cache throw the cards away and draw them again
+        // on the next rebuild, which is the stall this cache exists to avoid.
+        tiles.totalCostLimit = 128 * 1024 * 1024
     }
 
     /// The size a list row's artwork is drawn at.
@@ -74,58 +86,129 @@ final class CarPlayArtwork {
     /// again — with thousands of channels that is the difference between a
     /// rebuild and a stall.
     func tile(for channel: Channel, size: CGSize) -> UIImage {
-        let logo = logo(for: channel)
+        tile(for: channel, logo: logo(for: channel), size: size)
+    }
+
+    /// The tile for a channel, drawn from a logo that is in hand.
+    ///
+    /// The logo is **the one that arrived**, never a lookup in the cache: the
+    /// logo cache is bounded and it throws the oldest pictures away, so a
+    /// lookup can come back empty for a logo that was handed over a moment
+    /// ago — and the card would show the initials instead of the channel's own
+    /// picture.
+    func tile(for channel: Channel, logo: UIImage?, size: CGSize) -> UIImage {
         let key = Self.tileKey(for: channel, size: size, hasLogo: logo != nil)
         if let cached = tiles.object(forKey: key as NSString) { return cached }
 
         let image = Self.draw(logo: logo, initials: channel.name, size: size)
-        tiles.setObject(image, forKey: key as NSString,
-                        cost: Int(image.size.width * image.size.height * image.scale * image.scale))
+        tiles.setObject(image, forKey: key as NSString, cost: Self.cost(of: image))
+        // The placeholder this card replaces is not kept: two cards per
+        // channel is two times the memory, and the car never shows the
+        // placeholder again.
+        if logo != nil {
+            tiles.removeObject(
+                forKey: Self.tileKey(for: channel, size: size, hasLogo: false) as NSString)
+        }
         return image
     }
 
-    /// Fetches the channel's own logo.
+    /// Fetches the channel's own logo and hands it over.
     ///
-    /// The completion runs **only when something was fetched** — a logo that is
-    /// already in the cache is not news, and a completion that fired on every
-    /// cache hit would rebuild the template for ever.
-    func fetchTile(for channel: Channel, completion: @escaping () -> Void) {
+    /// The completion runs on the main thread with the logo — or with `nil`
+    /// when the channel has no logo or the download failed. A logo that is
+    /// already in the cache is handed over at once: it is not news, but the
+    /// caller still wants the card that shows it.
+    ///
+    /// One download per logo, however many callers ask for it: the callers
+    /// that arrive while the download is on its way are kept and served when
+    /// it lands.
+    func loadLogo(for channel: Channel, completion: @escaping (UIImage?) -> Void) {
         let key = Self.key(for: channel)
-        if cache.object(forKey: key as NSString) != nil { return }
-        guard let logoURL = channel.logoURL else { return }
+        if let cached = cache.object(forKey: key as NSString) {
+            DispatchQueue.main.async { completion(cached) }
+            return
+        }
+        guard let logoURL = channel.logoURL else {
+            DispatchQueue.main.async { completion(nil) }
+            return
+        }
 
         lock.lock()
-        let alreadyFetching = inFlight.contains(key)
-        if !alreadyFetching { inFlight.insert(key) }
+        if inFlight.contains(key) {
+            waiters[key, default: []].append(completion)
+            lock.unlock()
+            return
+        }
+        inFlight.insert(key)
+        waiters[key] = [completion]
         lock.unlock()
-        if alreadyFetching { return }
 
-        fetchLogo(logoURL) { [weak self] logo in
-            guard let logo else {
-                self?.finish(key)
-                return
+        fetch(logoURL, attempt: 1) { [weak self] logo in
+            guard let self else { return }
+            if let logo {
+                self.cache.setObject(logo, forKey: key as NSString, cost: Self.cost(of: logo))
             }
-            self?.cache.setObject(logo, forKey: key as NSString,
-                                  cost: Int(logo.size.width * logo.size.height * 4))
-            self?.finish(key)
-            DispatchQueue.main.async { completion() }
+            self.lock.lock()
+            let callbacks = self.waiters.removeValue(forKey: key) ?? []
+            self.inFlight.remove(key)
+            self.lock.unlock()
+            DispatchQueue.main.async {
+                for callback in callbacks { callback(logo) }
+            }
+        }
+    }
+
+    /// Fetches a logo — and tries again when the server refuses it.
+    ///
+    /// The playlist's logos come from a handful of CDNs, and the biggest of
+    /// them (imgur) answers **429** when more than a hundred pictures are
+    /// asked for in a short while. The car asks for a whole category at once,
+    /// so a refusal is the rule rather than the exception — and the picture it
+    /// refused is worth another try a moment later.
+    ///
+    /// The requests go out **one after another**, with a gap between them: the
+    /// rows that are on the car come first, and the rest of the category
+    /// follows instead of arriving as one burst that is refused as a whole.
+    private func fetch(_ url: URL, attempt: Int, completion: @escaping (UIImage?) -> Void) {
+        gate.async {
+            let now = Date()
+            // The next request goes out when its turn comes — never before,
+            // and never later than the gap after the one before it.
+            let start = max(now, self.nextRequest)
+            self.nextRequest = start.addingTimeInterval(Self.requestGap)
+            self.gate.asyncAfter(deadline: .now() + start.timeIntervalSince(now)) {
+                self.fetchLogo(url) { logo in
+                    guard logo == nil, attempt < Self.fetchAttempts else {
+                        completion(logo)
+                        return
+                    }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + Double(attempt) * 2) {
+                        self.fetch(url, attempt: attempt + 1, completion: completion)
+                    }
+                }
+            }
         }
     }
 
     /// The tile for a site of the browser catalogue.
+    ///
+    /// The tile is **drawn**, not fetched — but the browser draws a row of
+    /// them on every keystroke, at the car's scale, so it is cached like the
+    /// channel tiles are.
     func siteTile(for site: BookmarkItem, size: CGSize) -> UIImage {
-        let background = UIColor(site.iconBgColor)
-        if let symbol = site.systemImage,
-           let image = UIImage(systemName: symbol)?.withTintColor(UIColor(site.labelColor), renderingMode: .alwaysOriginal) {
-            return Self.draw(symbol: image, background: background, size: size)
-        }
-        return Self.draw(text: site.labelText ?? site.name, color: UIColor(site.labelColor), background: background, size: size)
-    }
+        let key = "site|\(site.urlString)|\(Int(size.width))x\(Int(size.height))|\(Self.displayScale)" as NSString
+        if let cached = tiles.object(forKey: key) { return cached }
 
-    private func finish(_ key: String) {
-        lock.lock()
-        inFlight.remove(key)
-        lock.unlock()
+        let background = UIColor(site.iconBgColor)
+        let image: UIImage
+        if let symbol = site.systemImage,
+           let symbolImage = UIImage(systemName: symbol)?.withTintColor(UIColor(site.labelColor), renderingMode: .alwaysOriginal) {
+            image = Self.draw(symbol: symbolImage, background: background, size: size)
+        } else {
+            image = Self.draw(text: site.labelText ?? site.name, color: UIColor(site.labelColor), background: background, size: size)
+        }
+        tiles.setObject(image, forKey: key, cost: Self.cost(of: image))
+        return image
     }
 
     /// The channel's own logo, when it has been fetched already.
@@ -143,12 +226,22 @@ final class CarPlayArtwork {
         "\(key(for: channel))|\(Int(size.width))x\(Int(size.height))|\(displayScale)|\(hasLogo)"
     }
 
+    /// What a picture costs in the cache — its **pixels**, not its points.
+    ///
+    /// Points understate a picture by the square of the scale, so a cache that
+    /// counts them throws the pictures away nine times sooner than its limit
+    /// says.
+    private static func cost(of image: UIImage) -> Int {
+        let pixels = image.size.width * image.scale * image.size.height * image.scale
+        return Int(pixels * 4)
+    }
+
     // MARK: - Drawing
 
     /// A charcoal card with the logo at its own aspect ratio — never stretched.
     static func draw(logo: UIImage?, initials: String, size: CGSize) -> UIImage {
         let canvas = canvas(for: size)
-        return draw(background: CarPlayPalette.tile, accent: CarPlayPalette.accent, canvas: canvas) { rect in
+        return draw(background: CarPlayPalette.tile, canvas: canvas) { rect in
             if let logo {
                 logo.draw(in: logoRect(logoSize: logo.size, in: rect))
             } else {
@@ -170,7 +263,7 @@ final class CarPlayArtwork {
     /// A card with a symbol on it — the browser catalogue's own icons.
     static func draw(symbol: UIImage, background: UIColor, size: CGSize) -> UIImage {
         let canvas = canvas(for: size)
-        return draw(background: background, accent: CarPlayPalette.accent, canvas: canvas) { rect in
+        return draw(background: background, canvas: canvas) { rect in
             symbol.draw(in: logoRect(logoSize: symbol.size, in: rect))
         }
     }
@@ -178,7 +271,7 @@ final class CarPlayArtwork {
     /// A card with a letter on it.
     static func draw(text: String, color: UIColor, background: UIColor, size: CGSize) -> UIImage {
         let canvas = canvas(for: size)
-        return draw(background: background, accent: CarPlayPalette.accent, canvas: canvas) { rect in
+        return draw(background: background, canvas: canvas) { rect in
             drawText(String(text.prefix(3)),
                      color: color,
                      size: CGSize(width: rect.width * 0.34, height: rect.height * 0.34),
@@ -186,9 +279,11 @@ final class CarPlayArtwork {
         }
     }
 
-    /// The card itself: a rounded charcoal tile with the green marker.
+    /// The card itself: a rounded charcoal tile with the logo on it.
+    ///
+    /// Nothing else is drawn on it. The car's screen is dark, and a card with
+    /// a colour of our own on it reads as a bug on the car, not as a design.
     private static func draw(background: UIColor,
-                             accent: UIColor,
                              canvas: CGRect,
                              content: (CGRect) -> Void) -> UIImage {
         // The canvas is in points; the renderer draws it at the **car's**
@@ -202,13 +297,6 @@ final class CarPlayArtwork {
             context.cgContext.fillPath()
 
             content(canvas)
-
-            // The green marker along the bottom of the card.
-            context.cgContext.setFillColor(accent.cgColor)
-            context.cgContext.fill(CGRect(x: 0,
-                                         y: canvas.height - max(2, canvas.height * 0.02),
-                                         width: canvas.width,
-                                         height: max(2, canvas.height * 0.02)))
         }
     }
 

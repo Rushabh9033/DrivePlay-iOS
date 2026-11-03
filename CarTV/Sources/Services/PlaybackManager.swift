@@ -40,6 +40,18 @@ public final class PlaybackManager: ObservableObject {
     /// route back: `isExternalPlaybackActive` is the system's own answer to
     /// "is the picture somewhere else".
     @Published public var isPlayingOnCar: Bool = false
+    /// True while a car is connected to the app.
+    ///
+    /// The car's display is an AirPlay destination and **the app cannot pick
+    /// that route itself** — only the system's list of displays can. What the
+    /// app can do is offer the picture again as soon as the car is there.
+    @Published public var isCarConnected: Bool = false
+
+    /// True when the button has to fall back to the system's list of displays.
+    ///
+    /// With a car connected the picture goes there at once and the list is
+    /// never shown; without a car the list is the only way to reach a display.
+    public var needsRoutePicker: Bool { !isCarConnected }
 
     private var timeObserverToken: Any?
     /// True while the player is showing the live screen share rather than a channel.
@@ -136,6 +148,14 @@ public final class PlaybackManager: ObservableObject {
         player?.play()
         isPlaying = true
         updateNowPlayingInfo()
+
+        // A car is connected, so the picture belongs to it: a video the user
+        // starts on the phone goes to the car's display at once. The car asked
+        // for its own video (`presentation == .hidden`), so there is nothing to
+        // hand over then.
+        if isCarConnected && presentation != .hidden {
+            handOffToCar()
+        }
     }
     
     public func playOffline(item: LocalVideoItem, inLandscape: Bool = true) {
@@ -235,6 +255,18 @@ public final class PlaybackManager: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// The "Play on Car Display" button.
+    ///
+    /// With a car connected the picture goes there at once — the system's list
+    /// of displays is **never** shown. Without a car there is nowhere to go,
+    /// and the list is the only way to reach a display.
+    @discardableResult
+    public func playOnCarDisplay() -> Bool {
+        guard isCarConnected else { return false }
+        handOffToCar()
+        return true
+    }
+
     /// Moves the picture to the car's display.
     ///
     /// The car owns the picture: the phone stops drawing it (the docked player
@@ -246,7 +278,35 @@ public final class PlaybackManager: ObservableObject {
         // The picture may be allowed to leave the phone again.
         player?.allowsExternalPlayback = true
         presentationMode = .hidden
-        player?.play()
+        offerPictureToTheCar()
+        // The car's video endpoint appears a moment **after** the scene
+        // connects, so the picture is offered again and again for a while:
+        // the route is only looked at when the picture is offered.
+        for delay in [3.0, 8.0, 20.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self = self, self.isCarConnected, !self.isPlayingOnCar else { return }
+                self.offerPictureToTheCar()
+            }
+        }
+    }
+
+    /// Offers the picture to the car's display.
+    ///
+    /// The AirPlay route belongs to the system, and the system only looks at
+    /// it when the picture is offered: the hand-off that happened before the
+    /// CarPlay video endpoint existed found no endpoint at all and the picture
+    /// stayed on the phone (the system's own log said *"Local Playback = 1"*).
+    /// Replacing the item is what makes the system build a new player for it
+    /// and look at the route again.
+    private func offerPictureToTheCar() {
+        guard let p = player else { return }
+        p.allowsExternalPlayback = true
+        updateNowPlayingInfo()
+        if let item = p.currentItem {
+            p.replaceCurrentItem(with: item)
+        }
+        p.play()
+        isPlaying = true
     }
 
     /// The user is about to pick a route, so the video is offered to the car's

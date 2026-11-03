@@ -106,22 +106,10 @@ final class DemoFrameSource {
         }
 
         guard let picture = CIImage(image: image) else { return nil }
-        var buffer: CVPixelBuffer?
-        guard CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            Int(size.width),
-            Int(size.height),
-            kCVPixelFormatType_32BGRA,
-            nil,
-            &buffer
-        ) == noErr, let buffer else { return nil }
-        context.render(
-            picture,
-            to: buffer,
-            bounds: CGRect(origin: .zero, size: size),
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-        return buffer
+        // The scaler makes the buffer, so the demo picture is encoded exactly
+        // like a captured frame — same canvas, same pixel format, same
+        // IOSurface-backed allocation.
+        return ScreenFrameScaler.fit(picture, context: context)
     }
 }
 

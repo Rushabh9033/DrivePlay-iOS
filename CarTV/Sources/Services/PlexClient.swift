@@ -202,11 +202,16 @@ public struct PlexClient: Sendable {
     /// The media server of an account, out of the resources plex.tv reported.
     ///
     /// The local address wins: a remote address cannot reach a file that is
-    /// not on the public internet.
+    /// not on the public internet. The rule holds **across** the servers too —
+    /// one server's remote address must not beat another server's local one.
     public static func preferredServer(in servers: [PlexResource]) -> (name: String, address: String)? {
         let mediaServers = servers.filter { $0.provides.contains("server") }
         let candidates = mediaServers.isEmpty ? servers : mediaServers
-        for server in candidates {
+        // A server that answers on the local network comes first; the order
+        // plex.tv sent is kept among the rest.
+        let ordered = candidates.filter { hasLocalAddress($0) }
+            + candidates.filter { !hasLocalAddress($0) }
+        for server in ordered {
             guard let uri = preferredAddress(of: server) else { continue }
             let name = server.name.isEmpty ? "Plex Server" : server.name
             return (name, URLPolicy.normalized(uri))
@@ -272,6 +277,11 @@ public struct PlexClient: Sendable {
     private static func preferredAddress(of server: PlexResource) -> String? {
         let usable = (server.connections ?? []).filter { !$0.uri.isEmpty }
         return (usable.first(where: { $0.local }) ?? usable.first)?.uri
+    }
+
+    /// True when the server can be reached on the local network.
+    private static func hasLocalAddress(_ server: PlexResource) -> Bool {
+        (server.connections ?? []).contains { $0.local && !$0.uri.isEmpty }
     }
 
     /// A request to a media server, with the token of the account.

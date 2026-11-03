@@ -43,18 +43,7 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
     }
     
     public func load(_ input: String) {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        var destination = trimmed
-        if destination.lowercased().hasPrefix("http://") || destination.lowercased().hasPrefix("https://") {
-            // direct URL
-        } else if destination.contains(".") && !destination.contains(" ") {
-            destination = "https://" + destination
-        } else {
-            // Google custom search query
-            destination = "https://www.google.com/search?q=" + (destination.addingPercentEncoding(withAllowedCharacters: Self.queryAllowed) ?? destination)
-        }
+        guard let destination = Self.destination(for: input) else { return }
 
         // A URL that cannot be built is not loaded at all — and the tab must
         // not be left spinning for ever.
@@ -87,7 +76,25 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
         allowed.remove(charactersIn: "&=+?#")
         return allowed
     }()
-    
+
+    /// Where an input goes: a URL is a URL, anything else is a search.
+    ///
+    /// This is the rule the phone's browser follows, and the car's browser
+    /// follows the same one — so it lives in one place.
+    public static func destination(for input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            return trimmed
+        }
+        if trimmed.contains(".") && !trimmed.contains(" ") {
+            return "https://" + trimmed
+        }
+        return "https://www.google.com/search?q="
+            + (trimmed.addingPercentEncoding(withAllowedCharacters: queryAllowed) ?? trimmed)
+    }
+
     public func reload() {
         if webView.url != nil {
             webView.reload()

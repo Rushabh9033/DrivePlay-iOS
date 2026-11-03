@@ -90,7 +90,7 @@ public struct VoiceSearchOverlayView: View {
             // The permission may have taken a while — the overlay may be gone.
             guard !Task.isCancelled else { return }
             do {
-                try voiceSearch.startRecording { text in
+                try await voiceSearch.startRecording { text in
                     onResult(text)
                 }
             } catch {

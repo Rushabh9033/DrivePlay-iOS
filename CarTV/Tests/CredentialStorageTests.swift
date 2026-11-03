@@ -111,4 +111,75 @@ final class CredentialStorageTests: XCTestCase {
         XCTAssertFalse(json.contains("pass-secret"))
         XCTAssertEqual(CredentialStore.load(for: source.id)?.password, "pass-secret")
     }
+
+    /// AC90: the artwork loses its token on disk and gets it back.
+    ///
+    /// The image loader cannot send a header, so the token rides in the
+    /// artwork's query — and the artwork was written to the library file and
+    /// to the watch history in the clear.
+    func test_AC90_the_artwork_loses_its_token_on_disk() throws {
+        let credentials = SourceCredentials(serverToken: "tok-123")
+        let channel = Channel(
+            name: "Movie",
+            streamURL: URL(string: "http://example.com/Videos/1/stream.mp4?static=true&api_key=tok-123")!,
+            logoURL: URL(string: "http://example.com/Items/1/Images/Primary?fillWidth=400&api_key=tok-123")!
+        )
+
+        let onDisk = PlaylistStore.redactedForDisk(channel, credentials: credentials)
+        XCTAssertFalse(onDisk.streamURL.absoluteString.contains("tok-123"))
+        let artwork = try XCTUnwrap(onDisk.logoURL)
+        XCTAssertFalse(artwork.absoluteString.contains("tok-123"))
+
+        let readBack = PlaylistStore.restoredForPlayback(onDisk, credentials: credentials)
+        XCTAssertEqual(readBack.streamURL, channel.streamURL)
+        XCTAssertEqual(readBack.logoURL, channel.logoURL)
+    }
+
+    /// AC91: the watch history plays the real URL, not the placeholder.
+    ///
+    /// The history kept the *redacted* URL in memory, so the "watch again"
+    /// row played a URL with `__dp_token__` in it until the app was
+    /// restarted.
+    func test_AC91_the_watch_history_plays_the_real_url() throws {
+        let previousHistory = UserDefaults.standard.data(forKey: "cartv_playlist_watch_history")
+        let previousSources = PlaylistStore.shared.sources
+        defer {
+            PlaylistStore.shared.sources = previousSources
+            if let previousHistory {
+                UserDefaults.standard.set(previousHistory, forKey: "cartv_playlist_watch_history")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "cartv_playlist_watch_history")
+            }
+        }
+        UserDefaults.standard.removeObject(forKey: "cartv_playlist_watch_history")
+
+        let source = PlaylistSource(
+            name: "Jellyfin",
+            type: .jellyfin,
+            urlString: "http://example.com",
+            serverToken: "tok-123"
+        )
+        PlaylistStore.shared.sources = [source]
+
+        let channel = Channel(
+            name: "Movie",
+            streamURL: URL(string: "http://example.com/Videos/1/stream.mp4?api_key=tok-123")!,
+            logoURL: URL(string: "http://example.com/Items/1/Images/Primary?api_key=tok-123")!,
+            sourceId: source.id
+        )
+        let store = WatchHistoryStore()
+        store.recordWatch(channel)
+
+        let item = try XCTUnwrap(store.history.first)
+        // The item in memory plays the real URL…
+        XCTAssertTrue(item.streamURL.absoluteString.contains("tok-123"))
+        XCTAssertTrue(try XCTUnwrap(item.logoURL).absoluteString.contains("tok-123"))
+        // …and the copy on disk holds none of it.
+        let onDisk = WatchHistoryStore.redactedForDisk(
+            item,
+            credentials: SourceCredentials(serverToken: "tok-123")
+        )
+        XCTAssertFalse(onDisk.streamURL.absoluteString.contains("tok-123"))
+        XCTAssertFalse(try XCTUnwrap(onDisk.logoURL).absoluteString.contains("tok-123"))
+    }
 }

@@ -161,26 +161,31 @@ final class CarPlayTabTests: XCTestCase {
     private final class SpyActions: CarPlayTabActions {
         var played: [String] = []
         var pushed: [(title: String, channels: [Channel])] = []
-        var opened: [String] = []
+        var pushedCategories: [(title: String, categories: [ChannelGroup])] = []
         var pictureToggled = false
         var playbackToggled = false
         var shareStarted = false
         var shareStopped = false
+        var addressBarPushed = false
+        var opened: [String] = []
 
         func play(channel: Channel) { played.append(channel.name) }
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
+        func pushCategories(title: String, categories: [ChannelGroup]) { pushedCategories.append((title, categories)) }
         func presentSearch() {}
         func togglePicture() { pictureToggled = true }
         func togglePlayback() { playbackToggled = true }
         func startScreenShare() { shareStarted = true }
         func stopScreenShare() { shareStopped = true }
-        func openOnPhone(url: String) { opened.append(url) }
+        func pushBrowserAddressBar() { addressBarPushed = true }
+        func openOnPhone(address: String) { opened.append(address) }
     }
 
-    private func channel(_ name: String, group: String) -> Channel {
+    private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {
         Channel(name: name,
                 streamURL: URL(string: "https://example.com/\(name).m3u8")!,
-                groupTitle: group)
+                groupTitle: group,
+                logoURL: logo.flatMap { URL(string: $0) })
     }
 
     private func items(in section: CPListSection) -> [CPListItem] {
@@ -271,6 +276,103 @@ final class CarPlayTabTests: XCTestCase {
         XCTAssertEqual(spy.pushed.first?.channels.count, 12)
     }
 
+    /// AC92: the categories the Home tab has no room for are still on the car.
+    ///
+    /// The Home tab shows a handful of categories, because every category is a
+    /// row of cards and every card is a picture — fifty of them took the
+    /// CarPlay session down. The rest are not lost: "All categories" opens
+    /// every one of them, with the count it really has.
+    func test_AC92_the_categories_the_home_tab_has_no_room_for_are_still_on_the_car() {
+        let spy = SpyActions()
+        let groups = (1...30).map { index in
+            ChannelGroup(name: "Group \(index)", channels: [channel("C\(index)", group: "Group \(index)")])
+        }
+        let channels = groups.flatMap(\.channels)
+
+        let sections = CarPlayTemplates.homeSections(groups: groups,
+                                                    channels: channels,
+                                                    owner: spy,
+                                                    prefersVideo: false)
+
+        // The Home tab is small enough to be drawn.
+        XCTAssertLessThanOrEqual(sections.count, CarPlayTemplates.homeCategoryLimit + 1)
+
+        // And the categories it left out are still there.
+        let allCategories = items(in: sections[0]).first { $0.text?.hasPrefix("All categories") == true }
+        XCTAssertNotNil(allCategories, "the car has no way into the other categories")
+        allCategories?.handler?(allCategories!, {})
+        XCTAssertEqual(spy.pushedCategories.count, 1)
+        XCTAssertEqual(spy.pushedCategories.first?.categories.count, 30)
+    }
+
+    /// AC93: the category list shows every category with its real count, and
+    /// opens the channels of the one that is tapped.
+    func test_AC93_the_category_list_shows_every_category_with_its_real_count() {
+        let spy = SpyActions()
+        let groups = [
+            ChannelGroup(name: "Movies", channels: (1...3).map { channel("M\($0)", group: "Movies") }),
+            ChannelGroup(name: "News", channels: [channel("N", group: "News")])
+        ]
+
+        let template = CarPlayTemplates.categoryList(title: "Categories", categories: groups, owner: spy)
+        let rows = items(in: template.sections[0])
+
+        XCTAssertEqual(rows.map(\.text), ["Movies", "News"])
+        XCTAssertEqual(rows.map(\.detailText), ["3 channels", "1 channels"])
+
+        rows[0].handler?(rows[0], {})
+        XCTAssertEqual(spy.pushed.count, 1)
+        XCTAssertEqual(spy.pushed.first?.title, "Movies")
+        XCTAssertEqual(spy.pushed.first?.channels.count, 3)
+    }
+
+    /// AC94: a logo that arrives patches the card that shows it — the
+    /// template is not rebuilt.
+    ///
+    /// A rebuild per logo sent the whole catalogue to the car again and
+    /// again: with a few hundred cards that is what took the CarPlay session
+    /// down. The card is told, and that is all.
+    func test_AC94_a_logo_that_arrives_patches_the_card_and_does_not_rebuild_the_screen() {
+        guard #available(iOS 26.0, *) else { return }
+
+        let artwork = CarPlayArtwork.shared
+        let original = artwork.fetchLogo
+        defer { artwork.fetchLogo = original }
+
+        var fetched = 0
+        artwork.fetchLogo = { _, completion in
+            fetched += 1
+            completion(UIImage())
+        }
+
+        let sections = CarPlayTemplates.homeSections(groups: [],
+                                                    channels: [channel("Sky Sports",
+                                                                        group: "Sports",
+                                                                        logo: "https://example.com/sky.png")],
+                                                    owner: nil,
+                                                    prefersVideo: false)
+
+        guard #available(iOS 26.0, *),
+              let row = sections.first?.items.compactMap({ $0 as? CPListImageRowItem }).first,
+              let element = row.elements.first else {
+            XCTFail("the card row is missing")
+            return
+        }
+        let before = element.image
+
+        // The logo arrives.
+        let settled = expectation(description: "the logo arrived")
+        artwork.loadLogo(for: channel("Sky Sports",
+                                      group: "Sports",
+                                      logo: "https://example.com/sky.png")) { _ in settled.fulfill() }
+        wait(for: [settled], timeout: 2)
+
+        // The screen is the same screen — the card was told, not replaced.
+        XCTAssertTrue(row.elements.first === element, "the card has to be the same card")
+        XCTAssertEqual(fetched, 1)
+        XCTAssertNotNil(before)
+    }
+
     /// AC59: the Favorites tab shows the favourites the phone holds — the same
     /// list, with its count.
     func test_AC59_the_favorites_tab_shows_the_favorites_of_the_phone() {
@@ -292,6 +394,8 @@ final class CarPlayTabTests: XCTestCase {
         var state = CarPlayCastState()
         state.pictureOnCar = true
         state.isPlaying = true
+        // There is a player: the picture is on the car and it is playing.
+        state.hasPlayer = true
         state.share = .sharing
         state.shareURL = "http://127.0.0.1:47311/abc/live.m3u8"
 
@@ -305,10 +409,15 @@ final class CarPlayTabTests: XCTestCase {
         XCTAssertEqual(rows.first { $0.text == "Mirror this phone's screen" }?.detailText,
                        "Sharing http://127.0.0.1:47311/abc/live.m3u8")
 
-        rows.first { $0.text == "Picture on the car" }?.handler?(rows[0], {})
-        rows.first { $0.text == "Pause" }?.handler?(rows[1], {})
-        rows.first { $0.text == "Mirror this phone's screen" }?.handler?(rows[2], {})
-        rows.first { $0.text == "Stop mirroring" }?.handler?(rows[3], {})
+        // The rows are looked up, not counted: a row that is missing has to
+        // fail the assertion, not take the whole test runner down with it.
+        for text in ["Picture on the car", "Pause", "Mirror this phone's screen", "Stop mirroring"] {
+            guard let row = rows.first(where: { $0.text == text }) else {
+                XCTFail("the Cast tab has no row titled \(text)")
+                continue
+            }
+            row.handler?(row, {})
+        }
         XCTAssertTrue(spy.pictureToggled)
         XCTAssertTrue(spy.playbackToggled)
         XCTAssertTrue(spy.shareStarted)
@@ -319,21 +428,133 @@ final class CarPlayTabTests: XCTestCase {
     /// same catalogue the phone shows — and opens them on the phone, because
     /// CarPlay has no web view of its own.
     func test_AC61_the_browser_tab_offers_the_sites_of_the_apps_own_browser() {
-        let spy = SpyActions()
+        let browser = CarPlayBrowserSearch()
 
-        let sections = CarPlayTemplates.browserSections(currentURL: "https://example.com/watch", owner: spy)
-        let rows = sections.flatMap { items(in: $0) }
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
 
-        XCTAssertEqual(rows.first { $0.text == "On the phone now" }?.detailText, "https://example.com/watch")
-
-        let youtube = rows.first { $0.text == "YouTube" }
+        let youtube = results.first { $0.text == "YouTube" }
         XCTAssertNotNil(youtube, "the car's browser has to offer the phone's sites")
-        youtube?.handler?(youtube!, {})
-        XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
 
         // The catalogue is the app's own — the phone's browser shows the same.
         XCTAssertEqual(BrowserCatalog.videoAndMusic.first?.name, "YouTube")
         XCTAssertTrue(BrowserCatalog.groups.contains { $0.title == "Live & Sports" })
+    }
+
+    /// AC99: the Browser tab's header is a **search bar** — the address bar of
+    /// the car's browser — and what the user types goes to the phone's own
+    /// browser, which turns a URL into a URL and anything else into a search.
+    func test_AC99_the_browsers_header_is_a_search_bar_that_redirects_to_the_phone() {
+        let browser = CarPlayBrowserSearch()
+        var opened: [String] = []
+        browser.openAddress = { opened.append($0) }
+
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "sky sports") { results = $0 }
+        guard let row = results.first else {
+            XCTFail("the browser's search bar found nothing")
+            return
+        }
+
+        browser.searchTemplate(CPSearchTemplate(), selectedResult: row) {}
+
+        XCTAssertEqual(opened, ["sky sports"],
+                       "what the user typed goes straight to the phone's browser")
+
+        // The phone's browser's own rule — the same one the car uses.
+        XCTAssertEqual(BrowserTabItem.destination(for: "example.com"), "https://example.com")
+        XCTAssertEqual(BrowserTabItem.destination(for: "sky sports"),
+                       "https://www.google.com/search?q=sky%20sports")
+    }
+
+    /// AC100: a site of the browser opens on the phone — the car has no web
+    /// view of its own, so the page is opened in the app's own browser.
+    func test_AC100_a_site_row_opens_on_the_phone() {
+        let browser = CarPlayBrowserSearch()
+        var opened: [String] = []
+        browser.openAddress = { opened.append($0) }
+
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
+        guard let youtube = results.first(where: { $0.text == "YouTube" }) else {
+            XCTFail("the browser has no YouTube row")
+            return
+        }
+
+        browser.searchTemplate(CPSearchTemplate(), selectedResult: youtube) {}
+
+        XCTAssertEqual(opened, ["https://m.youtube.com"])
+    }
+
+    /// AC101: the Browser tab is a **list** — the way into the address bar,
+    /// the page the phone shows now, and the app's own sites.
+    ///
+    /// The tab bar rejects a search template (`-validateTemplates:` raises and
+    /// the app dies at every scene connect), so the tab is a list and the
+    /// address bar is pushed onto the stack.
+    func test_AC101_the_browser_tab_is_a_list_with_the_address_bar_and_the_sites() {
+        let spy = SpyActions()
+
+        let sections = CarPlayTemplates.browserSections(currentURL: "https://example.com/watch",
+                                                         owner: spy)
+
+        let top = items(in: sections[0]).map(\.text)
+        XCTAssertEqual(top, ["Search or type a URL", "On the phone now"],
+                       "the Browser tab opens with the address bar and the page the phone shows")
+
+        // The address bar is pushed — it is never a tab.
+        let addressBar = items(in: sections[0])[0]
+        addressBar.handler?(addressBar, {})
+        XCTAssertTrue(spy.addressBarPushed, "the address bar was not pushed onto the stack")
+
+        // A site of the app's own browser opens on the phone.
+        let all = sections.flatMap { items(in: $0) }
+        guard let youtube = all.first(where: { $0.text == "YouTube" }) else {
+            XCTFail("the browser has no YouTube row")
+            return
+        }
+        youtube.handler?(youtube, {})
+        XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
+    }
+
+    /// AC102: the tab bar is built from **lists** only.
+    ///
+    /// A search template inside a tab bar is what killed the app; the tab bar
+    /// takes lists, and the compiler is what keeps it that way.
+    func test_AC102_the_tab_bar_is_built_from_lists_only() {
+        let bar = CarPlaySceneDelegate.makeTabBar(CarPlayTab.allCases.map {
+            CarPlaySceneDelegate.makeTemplate(tab: $0, sections: [])
+        })
+
+        XCTAssertEqual(bar.templates.count, 4)
+        for template in bar.templates {
+            XCTAssertTrue(template is CPListTemplate,
+                          "a tab that is not a list takes the app down")
+        }
+    }
+}
+
+/// The switch between the phone and the car's display.
+@MainActor
+final class CarOutputSwitchTests: XCTestCase {
+
+    /// AC98: with a car connected "Play on Car Display" goes **straight to the
+    /// car** — the system's list of displays is never shown. Without a car the
+    /// list is the only way to reach a display, so it is shown then.
+    func test_AC98_play_on_car_display_goes_straight_to_the_car() {
+        let playback = PlaybackManager.shared
+        defer { playback.isCarConnected = false }
+
+        playback.isCarConnected = false
+        XCTAssertTrue(playback.needsRoutePicker,
+                      "without a car there is nowhere to go, so the list of displays is the way")
+        XCTAssertFalse(playback.playOnCarDisplay())
+
+        playback.isCarConnected = true
+        XCTAssertFalse(playback.needsRoutePicker,
+                       "with a car connected the list of displays must not be shown")
+        XCTAssertTrue(playback.playOnCarDisplay(),
+                      "with a car connected the picture goes there at once")
     }
 }
 
@@ -370,13 +591,12 @@ final class CarPlayArtworkTests: XCTestCase {
         let subject = channel("Sky Sports", logo: "https://example.com/sky.png")
 
         let done = expectation(description: "the logo arrived")
-        artwork.fetchTile(for: subject) { done.fulfill() }
+        artwork.loadLogo(for: subject) { _ in done.fulfill() }
         wait(for: [done], timeout: 2)
 
-        // The screen is rebuilt — the logo is already there.
-        var refetched = false
-        artwork.fetchTile(for: subject) { refetched = true }
-        XCTAssertFalse(refetched)
+        // The screen is rebuilt — the logo is already there, so nothing is
+        // downloaded a second time.
+        artwork.loadLogo(for: subject) { _ in }
         XCTAssertEqual(fetches, 1)
     }
 
@@ -410,6 +630,123 @@ final class CarPlayArtworkTests: XCTestCase {
         let second = artwork.tile(for: subject, size: CGSize(width: 60, height: 60))
 
         XCTAssertTrue(first === second, "the card has to be drawn once")
+    }
+
+    /// AC95: the card that shows a logo is drawn from **that logo**.
+    ///
+    /// The logo cache is bounded and it throws the oldest pictures away, so a
+    /// card drawn from a *lookup* can come back with the initials for a logo
+    /// that was handed over a moment ago — and the car shows the initials for
+    /// ever, because the card never changes again.
+    func test_AC95_the_card_is_drawn_from_the_logo_that_arrived() {
+        let artwork = CarPlayArtwork()
+        let logo = CarPlayArtwork.draw(text: "L", color: .red, background: .red,
+                                       size: CGSize(width: 20, height: 20))
+
+        let tile = artwork.tile(for: channel("Sky Sports", logo: "https://example.com/sky.png"),
+                                logo: logo,
+                                size: CGSize(width: 60, height: 60))
+
+        let pixel = centrePixel(of: tile)
+        XCTAssertNotNil(pixel, "the card could not be read")
+        XCTAssertGreaterThan(pixel?.red ?? 0, 200, "the card has to show the logo")
+        XCTAssertLessThan(pixel?.green ?? 255, 80, "the card has to show the logo")
+    }
+
+    /// AC96: a logo the server refuses is asked for again.
+    ///
+    /// The playlist's logos come from a few CDNs, and the biggest of them
+    /// (imgur) answers **429** when the phone asks for more than a hundred
+    /// pictures in a short while — and the car asks for a whole category at
+    /// once. A refused picture that is never asked for again leaves the car
+    /// showing the initials.
+    func test_AC96_a_logo_the_server_refuses_is_asked_for_again() {
+        let artwork = CarPlayArtwork()
+        var attempts = 0
+        artwork.fetchLogo = { _, completion in
+            attempts += 1
+            completion(attempts < 2 ? nil : UIImage())
+        }
+
+        let arrived = expectation(description: "the logo arrived")
+        artwork.loadLogo(for: channel("Sky Sports", logo: "https://example.com/sky.png")) { logo in
+            XCTAssertNotNil(logo, "the logo was never taken")
+            arrived.fulfill()
+        }
+        wait(for: [arrived], timeout: 15)
+
+        XCTAssertEqual(attempts, 2, "the refused picture was not asked for again")
+    }
+
+    /// AC97: the car's cards carry no colour of our own.
+    ///
+    /// A tint on a card paints the frame around it **and** the text on it — in
+    /// our green, on every card of every category. The car paints its own
+    /// cards; the artwork carries the logo and nothing else.
+    func test_AC97_the_cards_carry_no_colour_of_our_own() {
+        // The artwork: the charcoal card, with nothing of ours painted on it.
+        let tile = CarPlayArtwork.shared.tile(for: channel("Sky Sports"), size: CGSize(width: 60, height: 60))
+        let ours = colours(of: tile).filter { $0.green > 150 && $0.red < 120 && $0.blue < 150 }
+        XCTAssertTrue(ours.isEmpty, "the card carries a colour of ours: \(ours.prefix(3))")
+
+        // The card element: the system's colour, not ours.
+        guard #available(iOS 26.0, *) else { return }
+        let channels = (1...8).map { channel("C\($0)") }
+        let sections = CarPlayTemplates.homeSections(groups: [],
+                                                     channels: channels,
+                                                     owner: nil,
+                                                     prefersVideo: false)
+        let cards = sections.flatMap { section -> [CPListImageRowItemCardElement] in
+            section.items.compactMap { item -> [CPListImageRowItemCardElement]? in
+                guard let row = item as? CPListImageRowItem else { return nil }
+                return row.elements.compactMap { $0 as? CPListImageRowItemCardElement }
+            }.flatMap { $0 }
+        }
+        XCTAssertFalse(cards.isEmpty, "no card was built")
+        for card in cards {
+            XCTAssertNil(card.tintColor, "a card of ours paints the frame around the logo")
+        }
+    }
+
+    /// The colour in the middle of a picture — the logo's own colour.
+    private func centrePixel(of image: UIImage) -> (red: Int, green: Int, blue: Int)? {
+        guard let cgImage = image.cgImage else { return nil }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        guard let context = CGContext(data: &pixel,
+                                      width: 1,
+                                      height: 1,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        // The picture is drawn around the origin, so its middle lands on the
+        // one pixel the context holds.
+        context.draw(cgImage, in: CGRect(x: -CGFloat(cgImage.width) / 2,
+                                          y: -CGFloat(cgImage.height) / 2,
+                                          width: CGFloat(cgImage.width),
+                                          height: CGFloat(cgImage.height)))
+        return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
+    }
+
+    /// Every colour of a picture — so a colour of ours can be looked for.
+    private func colours(of image: UIImage) -> [(red: Int, green: Int, blue: Int)] {
+        guard let cgImage = image.cgImage else { return [] }
+        let width = cgImage.width
+        let height = cgImage.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(data: &pixels,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return [] }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return stride(from: 0, to: pixels.count, by: 4).map {
+            (Int(pixels[$0]), Int(pixels[$0 + 1]), Int(pixels[$0 + 2]))
+        }
     }
 }
 

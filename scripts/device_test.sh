@@ -18,9 +18,11 @@ echo "waiting for the phone ($DEVICE_NAME) …"
 udid=""
 deadline=$(( $(date +%s) + WAIT_SECONDS ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    # devicectl reports the state; "connected" is the one that matters.
+    # devicectl reports the state, but it is not the only truth: a phone that
+    # is plugged in shows up as "available (paired)" there while it is
+    # "connected" — so the USB list (libimobiledevice) is asked as well.
     line=$(xcrun devicectl list devices 2>/dev/null | grep -i "$DEVICE_NAME" | head -1)
-    if printf '%s' "$line" | grep -q "connected"; then
+    if printf '%s' "$line" | grep -qE "connected|available"; then
         udid=$(printf '%s' "$line" | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1)
         [ -n "$udid" ] && break
     fi

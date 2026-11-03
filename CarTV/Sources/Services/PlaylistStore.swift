@@ -556,16 +556,32 @@ public final class PlaylistStore: ObservableObject {
         return try? JSONSerialization.data(withJSONObject: array)
     }
 
+    /// The channel as it is written to the disk.
+    ///
+    /// The URLs hold the credentials, so the copy on disk gets them removed:
+    /// the stream URL **and** the artwork — the image loader cannot send a
+    /// header, so the token rides in the artwork's query as well.
+    public static func redactedForDisk(_ channel: Channel, credentials: SourceCredentials?) -> Channel {
+        var copy = channel
+        copy.streamURL = CredentialRedactor.redact(channel.streamURL, credentials: credentials)
+        copy.logoURL = channel.logoURL.map { CredentialRedactor.redact($0, credentials: credentials) }
+        return copy
+    }
+
+    /// The channel as it is read back from the disk: the secrets are back in
+    /// the URLs.
+    public static func restoredForPlayback(_ channel: Channel, credentials: SourceCredentials?) -> Channel {
+        var copy = channel
+        copy.streamURL = CredentialRedactor.restore(channel.streamURL, credentials: credentials)
+        copy.logoURL = channel.logoURL.map { CredentialRedactor.restore($0, credentials: credentials) }
+        return copy
+    }
+
     public func saveChannels() {
         rebuildIndex()
         // The URLs hold the credentials, so the copy on disk gets them removed.
         let chs = channels.map { channel -> Channel in
-            var copy = channel
-            copy.streamURL = CredentialRedactor.redact(
-                channel.streamURL,
-                credentials: credentials(for: channel.sourceId)
-            )
-            return copy
+            Self.redactedForDisk(channel, credentials: credentials(for: channel.sourceId))
         }
         Task.detached(priority: .background) {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -615,9 +631,10 @@ public final class PlaylistStore: ObservableObject {
         var needsRewrite = fromLegacyDefaults
         for index in loaded.indices {
             let credentials = credentials(for: loaded[index].sourceId)
-            let redacted = CredentialRedactor.redact(loaded[index].streamURL, credentials: credentials)
-            if redacted != loaded[index].streamURL { needsRewrite = true }
-            loaded[index].streamURL = CredentialRedactor.restore(loaded[index].streamURL, credentials: credentials)
+            // Does the file still hold a secret — in the stream URL or in the
+            // artwork? Then it has to be written again without it.
+            if Self.redactedForDisk(loaded[index], credentials: credentials) != loaded[index] { needsRewrite = true }
+            loaded[index] = Self.restoredForPlayback(loaded[index], credentials: credentials)
         }
         self.channels = loaded
         // The old plist blob held the URLs in the clear: it is not needed any
