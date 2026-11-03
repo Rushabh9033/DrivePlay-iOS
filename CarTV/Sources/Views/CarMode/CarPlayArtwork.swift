@@ -41,9 +41,16 @@ final class CarPlayArtwork {
 
     /// The pictures are asked for one after another — see `fetch`.
     private let gate = DispatchQueue(label: "com.rushabh.cartvv.artwork")
-    /// When the next picture may go out.
-    private var nextRequest = Date.distantPast
-    /// The gap between two logo requests.
+    /// When the next picture may go out, **per host**.
+    ///
+    /// The gap is there because of a CDN with a per-IP quota (imgur answers
+    /// **429**), and that quota belongs to the **host**, not to the app: eight
+    /// servers' logos do not have to wait for each other. One gate for the
+    /// whole app made the car wait for the *sum* of every server's gaps — a
+    /// row of eight cards from eight servers took eight times as long as it
+    /// had to.
+    private var nextRequestByHost: [String: Date] = [:]
+    /// The gap between two logo requests **to the same host**.
     private static let requestGap: TimeInterval = 0.2
     /// How many times a picture is asked for before it is given up on.
     private static let fetchAttempts = 3
@@ -166,16 +173,19 @@ final class CarPlayArtwork {
     /// so a refusal is the rule rather than the exception — and the picture it
     /// refused is worth another try a moment later.
     ///
-    /// The requests go out **one after another**, with a gap between them: the
-    /// rows that are on the car come first, and the rest of the category
-    /// follows instead of arriving as one burst that is refused as a whole.
+    /// The requests to **one** host go out **one after another**, with a gap
+    /// between them: the rows that are on the car come first, and the rest of
+    /// the category follows instead of arriving as one burst that is refused as
+    /// a whole. The hosts do not wait for each other — the quota that makes
+    /// the gap necessary is the **host's**.
     private func fetch(_ url: URL, attempt: Int, completion: @escaping (UIImage?) -> Void) {
+        let host = url.host ?? ""
         gate.async {
             let now = Date()
             // The next request goes out when its turn comes — never before,
             // and never later than the gap after the one before it.
-            let start = max(now, self.nextRequest)
-            self.nextRequest = start.addingTimeInterval(Self.requestGap)
+            let start = max(now, self.nextRequestByHost[host] ?? .distantPast)
+            self.nextRequestByHost[host] = start.addingTimeInterval(Self.requestGap)
             self.gate.asyncAfter(deadline: .now() + start.timeIntervalSince(now)) {
                 self.fetchLogo(url) { logo in
                     guard logo == nil, attempt < Self.fetchAttempts else {

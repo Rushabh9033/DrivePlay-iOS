@@ -145,7 +145,9 @@ enum CarPlayTemplates {
                                     sectionIndexTitle: nil)
             if let first = channels.first {
                 loadArtwork(for: first, size: CarPlayArtwork.rowSize) { image in
-                    all.headerImage = image
+                    CarPlayCardPatcher.shared.add {
+                        all.headerImage = image
+                    }
                 }
             }
             sections.append(all)
@@ -219,7 +221,9 @@ enum CarPlayTemplates {
         // the header is told, the template is not rebuilt.
         if let first = shown.first {
             loadArtwork(for: first, size: CarPlayArtwork.rowSize) { image in
-                section.headerImage = image
+                CarPlayCardPatcher.shared.add {
+                    section.headerImage = image
+                }
             }
         }
 
@@ -454,11 +458,16 @@ enum CarPlayTemplates {
         // one is told, the template is not rebuilt**: a rebuild per logo sent
         // the whole catalogue to the car again and again, and that is what
         // took the CarPlay session down.
+        //
+        // The car is told **once for the whole row**: a car that is handed
+        // eight pictures one by one reloads the row eight times.
         for (index, channel) in channels.enumerated() {
             loadArtwork(for: channel, size: size) { image in
                 cards[index].image = image
-                // A fresh array, so the car reloads the row.
-                row.elements = cards.map { $0 as CPListImageRowItemElement }
+                CarPlayCardPatcher.shared.add { [weak row] in
+                    // A fresh array, so the car reloads the row.
+                    row?.elements = cards.map { $0 as CPListImageRowItemElement }
+                }
             }
         }
         return row
@@ -557,6 +566,54 @@ enum CarPlayTemplates {
 
         let section = CPListSection(items: items, header: nil, sectionIndexTitle: nil)
         return CPListTemplate(title: title, sections: [section])
+    }
+}
+
+/// The car's rows, patched in batches.
+///
+/// Every logo that arrives patches the card that shows it — but a car that is
+/// told about **each** picture separately reloads the row again and again,
+/// and the session pays for every one of those reloads. The patches are
+/// therefore collected and handed over **once per batch**: a car that is told
+/// once for eight pictures is a car that is told once.
+final class CarPlayCardPatcher {
+
+    /// The one the app uses.
+    static let shared = CarPlayCardPatcher()
+
+    /// How long the batch waits for more pictures.
+    ///
+    /// Long enough that the pictures of one row arrive together, short enough
+    /// that the car does not wait for the last one.
+    private static let batchDelay: TimeInterval = 0.2
+
+    /// The patches that are waiting for the batch.
+    private var pending: [() -> Void] = []
+    /// The batches that went out.
+    private(set) var batchCount = 0
+    /// The work item that will send the batch.
+    private var scheduled: DispatchWorkItem?
+
+    /// Adds a patch to the next batch.
+    func add(_ patch: @escaping () -> Void) {
+        pending.append(patch)
+        guard scheduled == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.flush()
+        }
+        scheduled = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.batchDelay, execute: work)
+    }
+
+    /// Sends the batch — on the main thread, because the patches touch the
+    /// car's own objects.
+    private func flush() {
+        scheduled = nil
+        let patches = pending
+        pending = []
+        guard !patches.isEmpty else { return }
+        batchCount += 1
+        for patch in patches { patch() }
     }
 }
 

@@ -161,8 +161,9 @@ public final class CarPlaySceneDelegate: UIResponder,
         NSLog("DRIVEPLAY CarPlay scene disconnected")
         cancellables.removeAll()
         // There is no car any more: the picture cannot go there, so the button
-        // on the phone falls back to the system's list of displays.
-        PlaybackManager.shared.isCarConnected = false
+        // on the phone falls back to the system's list of displays — and a
+        // picture that was on the car's display comes back to the phone.
+        PlaybackManager.shared.carDisconnected()
         // Nobody is left to watch the stream.
         ScreenShareService.shared.stop()
         ScreenShareService.shared.stopRelay()

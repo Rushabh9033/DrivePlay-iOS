@@ -38,8 +38,10 @@ public final class PlaybackManager: ObservableObject {
     ///
     /// The car's display is an AirPlay destination, so the player reports the
     /// route back: `isExternalPlaybackActive` is the system's own answer to
-    /// "is the picture somewhere else".
-    @Published public var isPlayingOnCar: Bool = false
+    /// "is the picture somewhere else". **The system is the only writer** —
+    /// the flag is read-only from the outside, so the banner and the picture
+    /// can never disagree.
+    @Published public private(set) var isPlayingOnCar: Bool = false
     /// True while a car is connected to the app.
     ///
     /// The car's display is an AirPlay destination and **the app cannot pick
@@ -52,6 +54,36 @@ public final class PlaybackManager: ObservableObject {
     /// With a car connected the picture goes there at once and the list is
     /// never shown; without a car the list is the only way to reach a display.
     public var needsRoutePicker: Bool { !isCarConnected }
+
+    /// True while the picture is on its way to the car.
+    ///
+    /// The car has the picture only when the **system** says so — until then
+    /// the phone keeps it, so the video is never on neither screen.
+    public var isHandingOffToCar: Bool { pictureIntent == .car && !isPlayingOnCar }
+
+    /// Which screen the picture is wanted on.
+    ///
+    /// The car's display is an AirPlay destination and **the app cannot pick
+    /// that route** — only the system can. So the app *asks* (the intent) and
+    /// the system's own answer decides where the picture really is.
+    private enum PictureIntent {
+        case phone
+        case car
+    }
+
+    /// What the app is asking for.
+    private var pictureIntent: PictureIntent = .phone
+
+    /// The hand-off that is running.
+    ///
+    /// Every hand-off — and every picture taken back — gets a new number, so
+    /// the ladder of an old hand-off stops at once. Without it a picture the
+    /// user had taken back to the phone jumped back to the car a few seconds
+    /// later, on its own.
+    private var handOffGeneration = 0
+
+    /// The mode the phone's picture had before the car took it.
+    private var phonePresentationMode: PlayerPresentationMode = .docked
 
     private var timeObserverToken: Any?
     /// True while the player is showing the live screen share rather than a channel.
@@ -74,6 +106,30 @@ public final class PlaybackManager: ObservableObject {
     private var subtitleSelectionOptions: [String: AVMediaSelectionOption] = [:]
     /// The item the groups above came from.
     private var currentSelectionItem: AVPlayerItem?
+
+    /// The artwork of the channel that is playing.
+    ///
+    /// The picture is drawn **once** per channel and kept. The now-playing
+    /// info is refreshed while the video plays, and drawing a 512×512
+    /// gradient with a symbol and three lines of text every time is what made
+    /// the phone stutter — four times a second, on the main thread.
+    private var nowPlayingArtwork: UIImage?
+    private var nowPlayingArtworkChannelID: UUID?
+    /// What the now-playing info last said, so it is not handed over again
+    /// for a second that has not changed.
+    private var lastNowPlayingSignature: String?
+    private var lastNowPlayingSecond: Int = -1
+
+    /// How many times the now-playing artwork was drawn.
+    ///
+    /// The count is what proves the picture is drawn once per channel.
+    private(set) var artworkDrawCount: Int = 0
+
+    /// How many times the picture was offered to the car.
+    ///
+    /// Every offer builds the player again, so the count is what proves the
+    /// hand-off does not offer the same picture over and over.
+    private(set) var offerCount: Int = 0
     
     public init() {
         setupAudioSession()
@@ -127,9 +183,19 @@ public final class PlaybackManager: ObservableObject {
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
         
         if player == nil {
-            let p = AVPlayer(playerItem: playerItem)
+            let p = AVPlayer()
+            // The player's flags have to be set **before** the item is
+            // attached: the system looks at the route when the item arrives,
+            // and a player that forbids the picture from leaving the phone
+            // keeps it local for good.
+            p.allowsExternalPlayback = true
+            p.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+            p.replaceCurrentItem(with: playerItem)
             self.player = p
         } else {
+            // The same order for a player that is already there: it may have
+            // been told to keep the picture on the phone.
+            player?.allowsExternalPlayback = true
             player?.replaceCurrentItem(with: playerItem)
         }
         // The car's display is an AirPlay destination, and a CarPlay video app
@@ -153,8 +219,13 @@ public final class PlaybackManager: ObservableObject {
         // starts on the phone goes to the car's display at once. The car asked
         // for its own video (`presentation == .hidden`), so there is nothing to
         // hand over then.
+        //
+        // The picture is **not** offered again straight away: the item was
+        // attached a moment ago with the route already open, so the system
+        // has looked at it. Offering it again would build the player a second
+        // time — the stutter that made a start feel laggy.
         if isCarConnected && presentation != .hidden {
-            handOffToCar()
+            handOffToCar(offerImmediately: false)
         }
     }
     
@@ -242,16 +313,22 @@ public final class PlaybackManager: ObservableObject {
     /// Takes the picture back from the car's display.
     ///
     /// The route belongs to the player, so the item is replaced to leave the
-    /// external display — the picture is on the phone again.
+    /// external display — the picture is on the phone again. The phone's own
+    /// picture comes back too: it was taken away when the car took it, and
+    /// nothing brought it back on its own.
     public func castToPhone() {
         guard let p = player else { return }
+        // The picture is wanted on the phone: the ladder of the hand-off
+        // stops here, so the picture cannot jump back to the car on its own.
+        handOffGeneration += 1
+        pictureIntent = .phone
         p.allowsExternalPlayback = false
         if let item = p.currentItem {
             p.replaceCurrentItem(with: item)
         }
         p.play()
         isPlaying = true
-        isPlayingOnCar = false
+        presentationMode = phonePresentationMode
         updateNowPlayingInfo()
     }
 
@@ -269,22 +346,74 @@ public final class PlaybackManager: ObservableObject {
 
     /// Moves the picture to the car's display.
     ///
-    /// The car owns the picture: the phone stops drawing it (the docked player
-    /// is torn down), the stream keeps running, and the output the frames go
-    /// into moves with it — otherwise the item waits for a video output that
-    /// never comes and the car's display stays black.
-    public func handOffToCar() {
+    /// The car owns the picture — but only **once the system says so**. Until
+    /// then the phone keeps drawing it: the hand-off hid the phone's picture
+    /// straight away, so a car whose video endpoint was not ready yet left
+    /// the video on **neither** screen, and the user saw "sometimes only in the
+    /// car, sometimes only on the phone".
+    ///
+    /// The stream keeps running and the output the frames go into moves with
+    /// it — otherwise the item waits for a video output that never comes and
+    /// the car's display stays black.
+    ///
+    /// - Parameter offerImmediately: the picture is offered at once. A video
+    ///   that has just been started does not need it: the item was attached
+    ///   with the route already open, and offering it again right away would
+    ///   build the player a second time — a stutter at the start.
+    public func handOffToCar(offerImmediately: Bool = true) {
         guard player != nil else { return }
+        // A new hand-off: the ladder of the old one stops here.
+        handOffGeneration += 1
+        pictureIntent = .car
         // The picture may be allowed to leave the phone again.
         player?.allowsExternalPlayback = true
-        presentationMode = .hidden
-        offerPictureToTheCar()
-        // The car's video endpoint appears a moment **after** the scene
-        // connects, so the picture is offered again and again for a while:
-        // the route is only looked at when the picture is offered.
-        for delay in [3.0, 8.0, 20.0] {
+        // The mode the phone has to come back to when the picture is taken
+        // back.
+        if presentationMode != .hidden { phonePresentationMode = presentationMode }
+        if offerImmediately {
+            offerPictureToTheCar()
+        }
+        scheduleReoffers(generation: handOffGeneration)
+    }
+
+    /// The system's own answer to "is the picture on the car's display?".
+    ///
+    /// This is the **only** place the answer is acted on: the flag the UI
+    /// reads and the phone's own picture both follow it, so the banner and the
+    /// picture can never disagree.
+    func systemSaysPictureIsOnCar(_ onCar: Bool) {
+        guard onCar != isPlayingOnCar else { return }
+        isPlayingOnCar = onCar
+        if onCar {
+            // The car has the picture: the phone stops drawing it, and the
+            // output the frames go into follows — an item with no output
+            // never renders and the car's display stays black.
+            if presentationMode != .hidden { phonePresentationMode = presentationMode }
+            presentationMode = .hidden
+        } else if pictureIntent == .car {
+            // The picture is not on the car any more and the app still wants
+            // it there: the phone takes it back rather than leaving it on
+            // neither screen.
+            presentationMode = phonePresentationMode
+        }
+    }
+
+    /// The picture is offered again a few times.
+    ///
+    /// The car's video endpoint appears a moment **after** the scene connects
+    /// and the route is only looked at when the picture is offered — so the
+    /// picture is offered again and again for a while. The ladder stops at
+    /// the first sign that the picture is on the car, at the first sign that
+    /// the user wants it back, and when the hand-off is replaced by a newer
+    /// one.
+    private func scheduleReoffers(generation: Int) {
+        for delay in [1.0, 3.0, 8.0, 20.0, 45.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self, self.isCarConnected, !self.isPlayingOnCar else { return }
+                guard let self = self,
+                      self.handOffGeneration == generation,
+                      self.pictureIntent == .car,
+                      self.isCarConnected,
+                      !self.isPlayingOnCar else { return }
                 self.offerPictureToTheCar()
             }
         }
@@ -300,6 +429,7 @@ public final class PlaybackManager: ObservableObject {
     /// and look at the route again.
     private func offerPictureToTheCar() {
         guard let p = player else { return }
+        offerCount += 1
         p.allowsExternalPlayback = true
         updateNowPlayingInfo()
         if let item = p.currentItem {
@@ -315,6 +445,21 @@ public final class PlaybackManager: ObservableObject {
     /// happening.
     public func prepareForCar() {
         player?.allowsExternalPlayback = true
+    }
+
+    /// The car is gone — the picture cannot be on its display any more.
+    ///
+    /// The system says so by itself, but the app must not wait for it: the
+    /// picture would stay hidden on the phone while the car is gone, and the
+    /// user would be left with a black screen.
+    public func carDisconnected() {
+        isCarConnected = false
+        // The ladder of the hand-off stops here.
+        handOffGeneration += 1
+        let wasOnCar = isPlayingOnCar
+        pictureIntent = .phone
+        systemSaysPictureIsOnCar(false)
+        if wasOnCar { presentationMode = phonePresentationMode }
     }
 
     /// Keeps the picture running while the phone is minimised or locked.
@@ -396,11 +541,20 @@ public final class PlaybackManager: ObservableObject {
         player?.pause()
         player = nil
         currentChannel = nil
+        // The picture is not on the car any more: the same entry point the
+        // system's own answer goes through.
+        systemSaysPictureIsOnCar(false)
+        handOffGeneration += 1
+        pictureIntent = .phone
         presentationMode = .hidden
         isPlaying = false
         isBuffering = false
         currentTime = 0
         duration = 0
+        nowPlayingArtwork = nil
+        nowPlayingArtworkChannelID = nil
+        lastNowPlayingSignature = nil
+        lastNowPlayingSecond = -1
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         setOrientation(.portrait)
     }
@@ -523,7 +677,7 @@ public final class PlaybackManager: ObservableObject {
                 guard let self = self else { return }
                 let active = p.isExternalPlaybackActive
                 NSLog("DRIVEPLAY external playback active: %@", active ? "yes" : "no")
-                self.isPlayingOnCar = active
+                self.systemSaysPictureIsOnCar(active)
             }
         }
 
@@ -697,8 +851,18 @@ public final class PlaybackManager: ObservableObject {
         }
     }
     
-    private func updateNowPlayingInfo() {
+    /// Hands the now-playing info to the system.
+    ///
+    /// The info is only handed over when something in it **changed**: the
+    /// system counts the seconds itself once the rate is known, and the info
+    /// is refreshed four times a second while a video plays.
+    func updateNowPlayingInfo() {
         guard let channel = currentChannel else { return }
+        let second = Int(currentTime)
+        let signature = "\(channel.id.uuidString)|\(isPlaying)|\(duration)|\(isLiveStream)|\(channel.name)"
+        guard signature != lastNowPlayingSignature || second != lastNowPlayingSecond else { return }
+        lastNowPlayingSignature = signature
+        lastNowPlayingSecond = second
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: channel.name,
             MPMediaItemPropertyArtist: channel.groupTitle.isEmpty ? "DrivePlay Live" : channel.groupTitle,
@@ -708,17 +872,33 @@ public final class PlaybackManager: ObservableObject {
         if !isLiveStream && duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
         }
-        
+
         // High-resolution automotive artwork for car display & lockscreen
-        if let artImage = generateChannelArtwork(for: channel) {
+        if let artImage = artwork(for: channel) {
             let artwork = MPMediaItemArtwork(boundsSize: artImage.size) { _ in artImage }
             info[MPMediaItemPropertyArtwork] = artwork
         }
-        
+
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
-    
+
+    /// The artwork of a channel — drawn once and kept.
+    ///
+    /// Drawing it costs a 512×512 gradient, a symbol and three lines of text
+    /// on the main thread; doing that four times a second is what made the
+    /// phone stutter while a video played.
+    private func artwork(for channel: Channel) -> UIImage? {
+        if nowPlayingArtworkChannelID == channel.id, let image = nowPlayingArtwork {
+            return image
+        }
+        let image = generateChannelArtwork(for: channel)
+        nowPlayingArtworkChannelID = channel.id
+        nowPlayingArtwork = image
+        return image
+    }
+
     private func generateChannelArtwork(for channel: Channel) -> UIImage? {
+        artworkDrawCount += 1
         let size = CGSize(width: 512, height: 512)
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { ctx in

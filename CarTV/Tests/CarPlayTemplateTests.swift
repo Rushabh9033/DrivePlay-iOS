@@ -858,3 +858,130 @@ final class CarPlaySearchTests: XCTestCase {
                        "the selected search result did not play its channel")
     }
 }
+
+/// How the car's screen behaves under load.
+///
+/// The car is a **slow** display: every picture and every row that changes is
+/// carried over to it, and the CarPlay host watches how much work the app
+/// asks of it — *"Updated resource consumption: 5.842s (58.97%)"* — and tears
+/// the session down when it reaches a hundred per cent.
+///
+/// So the numbers here are not about the phone being quick. They are about
+/// how much the **car** is asked to do.
+final class CarPlayResponsivenessTests: XCTestCase {
+
+    /// A playlist of the real shape: hundreds of channels in hundreds of
+    /// categories.
+    private func playlist(categories: Int = 184, perCategory: Int = 3) -> [ChannelGroup] {
+        (0..<categories).map { index in
+            ChannelGroup(name: "Category \(index)",
+                         channels: (0..<perCategory).map { channel in
+                             Channel(name: "Channel \(index)-\(channel)",
+                                     streamURL: URL(string: "https://example.com/\(index)-\(channel).m3u8")!,
+                                     groupTitle: "Category \(index)")
+                         })
+        }
+    }
+
+    /// AC104: the car's Home tab is built in a moment.
+    ///
+    /// The Home tab carries a card for every channel it shows, and every card
+    /// is a picture the phone has to draw **for the car**. The whole screen
+    /// is built when the scene connects, so the time it takes is the time the
+    /// car shows **nothing**.
+    func test_AC104_the_home_tab_is_built_in_a_moment() {
+        let groups = playlist()
+        let channels = groups.flatMap(\.channels)
+
+        let started = Date()
+        let sections = CarPlayTemplates.homeSections(groups: groups,
+                                                    channels: channels,
+                                                    owner: nil,
+                                                    prefersVideo: false)
+        let elapsed = Date().timeIntervalSince(started)
+
+        // The screen the car gets.
+        var cards = 0
+        for section in sections {
+            for item in section.items {
+                if #available(iOS 26.0, *), let row = item as? CPListImageRowItem {
+                    cards += row.elements.count
+                }
+            }
+        }
+
+        NSLog("DRIVEPLAY the Home tab: %d sections, %d cards, built in %.0f ms",
+              sections.count, cards, elapsed * 1000)
+
+        XCTAssertLessThan(elapsed, 1.0,
+                          "building the Home tab took \(elapsed)s — the car waits that long for a screen")
+    }
+
+    /// AC105: the pictures of **different** servers arrive together.
+    ///
+    /// The refusal the pictures run into is a **per server** quota — one CDN
+    /// answers *429* when more than a hundred pictures are asked for in a
+    /// short while. A gap between every request, whatever the server, holds
+    /// the whole screen back: a playlist whose logos live on a dozen servers
+    /// waited a dozen times the gap before the last one arrived, and the car
+    /// showed its initials the whole while.
+    ///
+    /// One server still waits its turn. The others go together.
+    func test_AC105_the_pictures_of_different_servers_arrive_together() {
+        let artwork = CarPlayArtwork()
+        artwork.fetchLogo = { _, completion in completion(UIImage()) }
+
+        let hosts = (0..<8).map { "cdn\($0).example.com" }
+        let subjects = hosts.enumerated().map { index, host in
+            Channel(name: "Channel \(index)",
+                    streamURL: URL(string: "https://example.com/\(index).m3u8")!,
+                    groupTitle: "Group",
+                    logoURL: URL(string: "https://\(host)/logo.png"))
+        }
+
+        let started = Date()
+        let settled = expectation(description: "every picture arrived")
+        settled.expectedFulfillmentCount = subjects.count
+        for subject in subjects {
+            artwork.loadLogo(for: subject) { _ in settled.fulfill() }
+        }
+        wait(for: [settled], timeout: 10)
+        let elapsed = Date().timeIntervalSince(started)
+
+        NSLog("DRIVEPLAY %d pictures from %d servers arrived in %.0f ms",
+              subjects.count, hosts.count, elapsed * 1000)
+
+        // One gap's worth of time, and not one gap per server.
+        XCTAssertLessThan(elapsed, 1.0,
+                          "the pictures took \(elapsed)s — the servers' quotas are held against each other")
+    }
+
+    /// AC106: the car is told **once** for a batch of pictures, not once per
+    /// picture.
+    ///
+    /// A card that shows a logo is patched by handing the car the row again —
+    /// and a row carries every card in it. So a picture that arrives on its
+    /// own makes the car take the whole row back, eight times over, for one
+    /// logo. The car is asked to redraw what it already has.
+    ///
+    /// The pictures are told in **batches**: what arrived together goes
+    /// together.
+    func test_AC106_the_car_is_told_once_for_a_batch_of_pictures() {
+        let patcher = CarPlayCardPatcher()
+
+        var applied = 0
+        for _ in 0..<8 {
+            patcher.add { applied += 1 }
+        }
+
+        // The batch waits a moment for the pictures that are still on their
+        // way — and then goes out **once**.
+        let settled = expectation(description: "the batch went out")
+        patcher.add { settled.fulfill() }
+        wait(for: [settled], timeout: 5)
+
+        XCTAssertEqual(applied, 8, "the batch did not carry every picture")
+        XCTAssertEqual(patcher.batchCount, 1,
+                       "the car was told \(patcher.batchCount) times for one batch of pictures")
+    }
+}

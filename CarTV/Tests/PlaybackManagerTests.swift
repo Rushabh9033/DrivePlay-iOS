@@ -66,6 +66,10 @@ final class PlaybackManagerTests: XCTestCase {
 
     /// AC54: the car takes the picture — the phone stops drawing it and the
     /// output follows, so the item keeps rendering.
+    ///
+    /// The phone gives the picture up when the **system** says the car has it,
+    /// not when the app asks: a car whose video endpoint is not ready yet
+    /// would otherwise leave the video on neither screen.
     func test_AC54_the_car_takes_the_picture() {
         let manager = PlaybackManager()
         let channel = Channel(name: "AC54",
@@ -75,6 +79,10 @@ final class PlaybackManagerTests: XCTestCase {
         XCTAssertFalse(manager.hasVideoOutput)
 
         manager.handOffToCar()
+        XCTAssertEqual(manager.presentationMode, .docked,
+                       "the phone keeps the picture until the system says the car has it")
+
+        manager.systemSaysPictureIsOnCar(true)
 
         XCTAssertEqual(manager.presentationMode, .hidden)
         XCTAssertTrue(manager.hasVideoOutput)
@@ -97,6 +105,8 @@ final class PlaybackManagerTests: XCTestCase {
         manager.handOffToCar()
 
         XCTAssertEqual(manager.player?.allowsExternalPlayback, true)
+        // The phone gives the picture up when the system says the car has it.
+        manager.systemSaysPictureIsOnCar(true)
         XCTAssertEqual(manager.presentationMode, .hidden)
     }
 
@@ -110,15 +120,121 @@ final class PlaybackManagerTests: XCTestCase {
         manager.isCarConnected = true
         manager.play(channel: channel, presentation: .docked)
 
+        // The route is open at once — the system can take the picture now.
+        XCTAssertEqual(manager.player?.allowsExternalPlayback, true)
+        XCTAssertTrue(manager.isHandingOffToCar,
+                      "the car has not taken the picture yet, so the switch says so")
+
+        // The system says the car has it: the phone stops drawing it, and the
+        // item needs an output of its own, or the car's display stays black.
+        manager.systemSaysPictureIsOnCar(true)
         XCTAssertEqual(manager.presentationMode, .hidden,
                        "the phone keeps no picture — the car shows the video")
         XCTAssertTrue(manager.hasVideoOutput,
                       "the item needs an output of its own, or the car's display stays black")
-        XCTAssertEqual(manager.player?.allowsExternalPlayback, true)
 
         // Without a car the video stays on the phone.
         manager.isCarConnected = false
         manager.play(channel: channel, presentation: .docked)
         XCTAssertEqual(manager.presentationMode, .docked)
+    }
+
+    /// AC107: the picture is never on neither screen.
+    ///
+    /// The hand-off used to hide the phone's picture **straight away**: if the
+    /// car's video endpoint was not ready yet, the video was on the phone's
+    /// layer *and* on the car's — and the user saw "sometimes only in the car,
+    /// sometimes only on the phone". The phone keeps the picture until the
+    /// system says the car has it, and takes it back when the user asks.
+    func test_AC107_the_picture_is_never_on_neither_screen() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC107",
+                              streamURL: URL(string: "https://example.com/ac107.m3u8")!)
+
+        manager.play(channel: channel, presentation: .docked)
+        XCTAssertEqual(manager.presentationMode, .docked, "the picture is on the phone")
+
+        manager.handOffToCar()
+        XCTAssertEqual(manager.presentationMode, .docked,
+                       "the picture is still on the phone — the car has not confirmed it")
+
+        manager.systemSaysPictureIsOnCar(true)
+        XCTAssertEqual(manager.presentationMode, .hidden, "the picture is on the car")
+
+        manager.castToPhone()
+        XCTAssertEqual(manager.presentationMode, .docked, "the picture is back on the phone")
+    }
+
+    /// AC108: the picture the user took back does not jump back to the car.
+    ///
+    /// The hand-off offers the picture again and again for a while (the car's
+    /// video endpoint appears late), and that ladder was never stopped: the
+    /// picture the user had taken back to the phone jumped back to the car a
+    /// few seconds later, on its own.
+    func test_AC108_the_picture_taken_back_does_not_jump_back_to_the_car() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC108",
+                              streamURL: URL(string: "https://example.com/ac108.m3u8")!)
+
+        manager.isCarConnected = true
+        manager.play(channel: channel, presentation: .docked)
+        manager.handOffToCar()
+        let offers = manager.offerCount
+
+        manager.castToPhone()
+
+        // The ladder of the hand-off had its chance — and it may not offer
+        // the picture again.
+        let settled = expectation(description: "the ladder had its chance")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { settled.fulfill() }
+        wait(for: [settled], timeout: 5)
+
+        XCTAssertEqual(manager.offerCount, offers,
+                       "the picture was offered to the car again after the user took it back")
+        XCTAssertEqual(manager.player?.allowsExternalPlayback, false)
+        XCTAssertFalse(manager.isHandingOffToCar)
+    }
+
+    /// AC109: the now-playing artwork is drawn once per channel.
+    ///
+    /// The now-playing info is refreshed four times a second while a video
+    /// plays, and the artwork was **drawn** every time: a 512×512 gradient
+    /// with a symbol and three lines of text, on the main thread, four times
+    /// a second. That is what made the phone stutter while a video played.
+    func test_AC109_the_now_playing_artwork_is_drawn_once_per_channel() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC109",
+                              streamURL: URL(string: "https://example.com/ac109.m3u8")!)
+
+        manager.play(channel: channel, presentation: .docked)
+        XCTAssertEqual(manager.artworkDrawCount, 1,
+                       "the artwork was drawn \(manager.artworkDrawCount) times for one channel")
+
+        for _ in 0..<40 {
+            manager.updateNowPlayingInfo()
+        }
+
+        XCTAssertEqual(manager.artworkDrawCount, 1,
+                       "the artwork was drawn again while nothing about it had changed")
+    }
+
+    /// AC110: a video that has just started is not offered to the car twice.
+    ///
+    /// The item is attached with the route already open, so the system has
+    /// looked at it. Offering the picture again straight away would build the
+    /// player a second time — the stutter that made a start feel laggy.
+    func test_AC110_a_video_that_has_just_started_is_not_offered_twice() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC110",
+                              streamURL: URL(string: "https://example.com/ac110.m3u8")!)
+
+        manager.isCarConnected = true
+        manager.play(channel: channel, presentation: .docked)
+        XCTAssertEqual(manager.offerCount, 0,
+                       "the picture was offered again right after the video started")
+
+        // The button asks for the picture — **now** it is offered.
+        XCTAssertTrue(manager.playOnCarDisplay())
+        XCTAssertEqual(manager.offerCount, 1)
     }
 }

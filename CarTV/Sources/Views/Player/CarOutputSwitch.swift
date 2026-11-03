@@ -35,7 +35,12 @@ public struct CarOutputSwitch: View {
     /// that list is the only way to reach a display.
     private var pill: some View {
         Group {
-            if playback.needsRoutePicker {
+            if playback.isHandingOffToCar {
+                // The car has the picture only when the system says so, and
+                // that can take a moment — so the switch says so, instead of
+                // looking as if the tap had done nothing.
+                sendingLabel
+            } else if playback.needsRoutePicker {
                 pillLabel.overlay { FullCardRoutePickerOverlay() }
             } else {
                 Button {
@@ -46,6 +51,25 @@ public struct CarOutputSwitch: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// "Sending to Car…" — the picture is on its way.
+    private var sendingLabel: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+                .tint(.white)
+            Image(systemName: "tv.fill")
+                .font(.system(size: 12, weight: .bold))
+            Text("Sending to Car…")
+                .font(.system(size: 12, weight: .bold))
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.55), in: Capsule())
+        .overlay(Capsule().stroke(CarTVTheme.accent.opacity(0.8), lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 6)
     }
 
     private var pillLabel: some View {
