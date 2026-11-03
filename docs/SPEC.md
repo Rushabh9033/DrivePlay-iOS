@@ -30,10 +30,10 @@ carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
 | 4 | The car channel picker is a list of channel rows | `CarPlayTemplateTests` |
 | 5 | Every car channel row requests the video presentation | `CarPlayTemplateTests` |
 | 6 | The handset search box does not shrink the car catalogue | `InCarShelfTests` |
-| 7 | The Plex pin response is decoded as Plex actually sends it | `PlexTests` |
-| 8 | An authenticated Plex pin is decoded | `PlexTests` |
-| 9 | Importing the same file name twice keeps both files | `OfflineVaultTests` |
-| 10 | The offline vault index is written atomically and reloads | `OfflineVaultTests` |
+| 7 | The Plex pin response is decoded as Plex actually sends it | `SourceParserTests` |
+| 8 | An authenticated Plex pin is decoded | `SourceParserTests` |
+| 9 | Importing the same file name twice keeps both files | `LocalMediaServiceTests` |
+| 10 | The offline vault index is written atomically and reloads | `LocalMediaServiceTests` |
 | 11 | The install script has no hardcoded device and a bounded wait | `InstallScriptTests` |
 | 12 | The car shelves are only rebuilt when the channels or the favourites change | `InCarShelfTests` |
 | 13 | A favourite change does rebuild the shelves | `InCarShelfTests` |
