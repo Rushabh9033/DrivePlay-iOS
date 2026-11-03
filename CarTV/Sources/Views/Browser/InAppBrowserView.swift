@@ -1,0 +1,587 @@
+import SwiftUI
+import WebKit
+
+public struct BookmarkItem: Identifiable {
+    public let id = UUID()
+    public let name: String
+    public let urlString: String
+    public let iconBgColor: Color
+    public let systemImage: String?
+    public let labelText: String?
+    public let labelColor: Color
+    
+    public init(
+        name: String,
+        urlString: String,
+        iconBgColor: Color = .clear,
+        systemImage: String? = nil,
+        labelText: String? = nil,
+        labelColor: Color = .white
+    ) {
+        self.name = name
+        self.urlString = urlString
+        self.iconBgColor = iconBgColor
+        self.systemImage = systemImage
+        self.labelText = labelText
+        self.labelColor = labelColor
+    }
+}
+
+public struct InAppBrowserView: View {
+    @ObservedObject var tabManager = BrowserTabManager.shared
+    @ObservedObject var adBlocker = AdBlockerEngine.shared
+    
+    @State private var addressInput: String = ""
+    @State private var showAdBlockInfo: Bool = false
+    @FocusState private var isAddressFieldFocused: Bool
+    
+    // MARK: - Bookmarks Catalog
+    //
+    // The sites live in `BrowserCatalog`, so the car's browser tab offers the
+    // same list as the phone.
+
+    public init() {}
+    
+    public var body: some View {
+        ZStack(alignment: .bottom) {
+            // Content Area: Web View OR Native Bookmarks List
+            if let activeTab = tabManager.activeTab, !tabManager.activeTabURL.isEmpty {
+                ActiveTabWebViewContainer(tab: activeTab)
+                    .id(activeTab.id)
+            } else {
+                nativeBookmarksListView
+            }
+            
+            // Safari Native Bottom Search, Tab Add & Navigation Controls
+            safariBottomBar
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
+        }
+        .navigationTitle(currentNavTitle)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Top Bar: Ad Shield & Start Page Home button
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    showAdBlockInfo = true
+                } label: {
+                    Image(systemName: "shield.checkered")
+                        .foregroundColor(.green)
+                }
+            }
+            
+            ToolbarItem(placement: .topBarTrailing) {
+                if !tabManager.activeTabURL.isEmpty {
+                    Button {
+                        withAnimation {
+                            tabManager.activeTab?.urlString = ""
+                            tabManager.updateActiveTabState(url: "")
+                            addressInput = ""
+                        }
+                    } label: {
+                        Image(systemName: "house")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $tabManager.isViewingTabGrid) {
+            NativeSafariTabManagerSheet()
+        }
+        .sheet(isPresented: $showAdBlockInfo) {
+            nativeAdBlockerInfoSheet
+        }
+        .onAppear {
+            syncAddressFieldWithActiveTab()
+        }
+        .onChange(of: isAddressFieldFocused) { focused in
+            if focused {
+                if !tabManager.activeTabURL.isEmpty {
+                    addressInput = tabManager.activeTabURL
+                }
+            } else {
+                syncAddressFieldWithActiveTab()
+            }
+        }
+        .onChange(of: tabManager.activeTabURL) { newURL in
+            if !isAddressFieldFocused {
+                syncAddressFieldWithActiveTab()
+            }
+        }
+    }
+    
+    private func syncAddressFieldWithActiveTab() {
+        addressInput = ""
+    }
+    
+    private var displayAddressText: String {
+        let u = tabManager.activeTabURL
+        if u.isEmpty {
+            return "Search or enter website"
+        }
+        if let host = URL(string: u)?.host {
+            return host.replacingOccurrences(of: "www.", with: "")
+        }
+        return u
+    }
+    
+    private var canGoBack: Bool {
+        return (tabManager.activeTab?.canGoBack == true) || !tabManager.activeTabURL.isEmpty
+    }
+    
+    private var canGoForward: Bool {
+        return tabManager.activeTab?.canGoForward == true
+    }
+    
+    private var currentNavTitle: String {
+        if let activeTab = tabManager.activeTab, !tabManager.activeTabURL.isEmpty {
+            return activeTab.title.isEmpty ? displayAddressText : activeTab.title
+        }
+        return "Browser"
+    }
+    
+    // MARK: - Safari Native Bottom Bar (Editing & Browsing Modes, Zero UI Collisions)
+    
+    private var safariBottomBar: some View {
+        HStack(spacing: 8) {
+            if !isAddressFieldFocused {
+                // 1. Back Button
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        tabManager.activeTab?.goBack()
+                    }
+                } label: {
+                    Image(systemName: "chevron.backward")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(canGoBack ? .primary : Color.secondary.opacity(0.35))
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(!canGoBack)
+                
+                // 2. Forward Button
+                Button {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        tabManager.activeTab?.goForward()
+                    }
+                } label: {
+                    Image(systemName: "chevron.forward")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(canGoForward ? .primary : Color.secondary.opacity(0.35))
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(!canGoForward)
+            }
+            
+            // 3. Address Capsule with Permanent Interactive Search Field
+            HStack(spacing: 6) {
+                Image(systemName: tabManager.activeTabURL.isEmpty ? "magnifyingglass" : "lock.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                
+                TextField(
+                    tabManager.activeTabURL.isEmpty ? "Search or enter address" : displayAddressText,
+                    text: $addressInput
+                )
+                .font(.system(size: 15))
+                .foregroundColor(.primary)
+                .focused($isAddressFieldFocused)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .keyboardType(.webSearch)
+                .submitLabel(.go)
+                .onSubmit {
+                    submitAddress()
+                }
+                
+                if !addressInput.isEmpty {
+                    Button {
+                        addressInput = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.secondary)
+                            .frame(width: 24, height: 24)
+                    }
+                    
+                    Button {
+                        submitAddress()
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(.accentColor)
+                            .frame(width: 26, height: 26)
+                    }
+                } else if !isAddressFieldFocused {
+                    if let activeTab = tabManager.activeTab, activeTab.isLoading {
+                        Button {
+                            activeTab.stopLoading()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 24, height: 24)
+                        }
+                    } else if !tabManager.activeTabURL.isEmpty {
+                        Button {
+                            tabManager.activeTab?.reload()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+                                .frame(width: 24, height: 24)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 44)
+            .background(Color(UIColor.tertiarySystemFill))
+            .cornerRadius(12)
+            
+            if isAddressFieldFocused {
+                Button("Cancel") {
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        isAddressFieldFocused = false
+                        syncAddressFieldWithActiveTab()
+                    }
+                }
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.accentColor)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                // 4. Quick New Tab (+)
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        tabManager.createNewTab(urlString: "", dismissTabGrid: false)
+                        addressInput = ""
+                        isAddressFieldFocused = true
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                
+                // 5. Tabs Switcher Button [N]
+                Button {
+                    tabManager.isViewingTabGrid = true
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(Color.primary, lineWidth: 1.6)
+                            .frame(width: 22, height: 22)
+                        
+                        Text("\(tabManager.tabs.count)")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    .frame(width: 36, height: 44)
+                    .contentShape(Rectangle())
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(Color(UIColor.separator).opacity(0.3), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isAddressFieldFocused)
+    }
+    
+    // MARK: - Native Bookmarks List
+    
+    private var nativeBookmarksListView: some View {
+        List {
+            // Direct Top Search Bar for the Start Page
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Search Google or type a web address...", text: $addressInput)
+                        .font(.system(size: 16))
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .keyboardType(.webSearch)
+                        .submitLabel(.go)
+                        .onSubmit {
+                            submitAddress()
+                        }
+                    
+                    if !addressInput.isEmpty {
+                        Button {
+                            submitAddress()
+                        } label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("Search or Enter Website")
+            }
+            
+            Section("Live & Sports") {
+                ForEach(BrowserCatalog.liveAndSports) { item in
+                    bookmarkRow(item)
+                }
+            }
+
+            Section("Games & Tools") {
+                ForEach(BrowserCatalog.gamesAndTools) { item in
+                    bookmarkRow(item)
+                }
+            }
+
+            Section("Video & Music") {
+                ForEach(BrowserCatalog.videoAndMusic) { item in
+                    bookmarkRow(item)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 68)
+        }
+    }
+    
+    @ViewBuilder
+    private func bookmarkRow(_ item: BookmarkItem) -> some View {
+        Button {
+            print("[InAppBrowserView] Tapped bookmark: \(item.name) -> \(item.urlString)")
+            loadURL(item.urlString)
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(item.iconBgColor)
+                        .frame(width: 34, height: 34)
+                    
+                    if let iconName = item.systemImage {
+                        Image(systemName: iconName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(item.labelColor)
+                    } else if let label = item.labelText {
+                        Text(label)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(item.labelColor)
+                    }
+                }
+                
+                Text(item.name)
+                    .font(.body)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(Color(UIColor.tertiaryLabel))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+    
+    // MARK: - Direct Safari Search / URL Load
+    
+    private func loadURL(_ rawURL: String) {
+        addressInput = rawURL
+        withAnimation {
+            tabManager.loadURLInActiveTab(rawURL)
+        }
+    }
+    
+    private func submitAddress() {
+        isAddressFieldFocused = false
+        guard !addressInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        
+        withAnimation {
+            tabManager.loadURLInActiveTab(addressInput)
+        }
+    }
+    
+    // MARK: - Native Ad Blocker Info Sheet (Clean for Normal Users)
+    
+    private var nativeAdBlockerInfoSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 14) {
+                        Image(systemName: "shield.checkered")
+                            .font(.largeTitle)
+                            .foregroundColor(.green)
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Ad Blocker Active")
+                                .font(.headline)
+                            Text("Your browsing is fast, clean, and protected.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                
+                Section("Protection Status") {
+                    Label("Annoying Ads Blocked", systemImage: "checkmark.shield.fill")
+                    Label("Popups & Overlays Blocked", systemImage: "checkmark.shield.fill")
+                    Label("Trackers Blocked", systemImage: "checkmark.shield.fill")
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Ad Shield")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        showAdBlockInfo = false
+                    }
+                    .font(.body.weight(.semibold))
+                }
+            }
+        }
+        .presentationDetents([.fraction(0.38)])
+    }
+}
+
+// MARK: - Active Tab Web View Container (Observes Tab Directly for Instant Updates)
+
+public struct ActiveTabWebViewContainer: View {
+    @ObservedObject var tab: BrowserTabItem
+    
+    public init(tab: BrowserTabItem) {
+        self.tab = tab
+    }
+    
+    public var body: some View {
+        ZStack(alignment: .top) {
+            WebViewRepresentable(webView: tab.webView)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .edgesIgnoringSafeArea(.horizontal)
+            
+            if tab.isLoading {
+                ProgressView(value: tab.progress, total: 1.0)
+                    .tint(.accentColor)
+                    .scaleEffect(x: 1, y: 1.5, anchor: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 68)
+        }
+        .onAppear {
+            if tab.webView.url == nil && !tab.urlString.isEmpty {
+                tab.load(tab.urlString)
+            }
+        }
+    }
+}
+
+// MARK: - Apple Native Safari Multi-Tab Deck Manager Sheet
+
+public struct NativeSafariTabManagerSheet: View {
+    @ObservedObject var tabManager = BrowserTabManager.shared
+    @Environment(\.dismiss) var dismiss
+    
+    public init() {}
+    
+    public var body: some View {
+        NavigationStack {
+            List {
+                ForEach(tabManager.tabs) { tab in
+                    let isCurrent = (tab.id == tabManager.activeTab?.id)
+                    
+                    HStack(spacing: 12) {
+                        Button {
+                            tabManager.selectTab(id: tab.id)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: tab.urlString.isEmpty ? "house.fill" : "safari")
+                                    .font(.title3)
+                                    .foregroundColor(.accentColor)
+                                    .frame(width: 28)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(tab.title.isEmpty ? "Start Page" : tab.title)
+                                        .font(.body.weight(isCurrent ? .bold : .regular))
+                                        .foregroundColor(.primary)
+                                        .lineLimit(1)
+                                
+                                    Text(tab.urlString.isEmpty ? "Speed Dial Bookmarks" : tab.urlString)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                                
+                                if isCurrent {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundColor(.accentColor)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        
+                        // Close Tab Button
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                tabManager.closeTab(id: tab.id)
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .onDelete { indexSet in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        for index in indexSet.sorted(by: >) {
+                            tabManager.closeTab(at: index)
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Tabs (\(tabManager.tabs.count))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Native System Button: + New Tab (Keeps the sheet OPEN so user can see it added)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            tabManager.createNewTab(urlString: "", dismissTabGrid: false)
+                        }
+                    } label: {
+                        Label("New Tab", systemImage: "plus")
+                    }
+                }
+                
+                // Native System Button: Done
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.body.weight(.semibold))
+                }
+            }
+        }
+    }
+}

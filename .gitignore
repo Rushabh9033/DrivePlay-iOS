@@ -1,0 +1,19 @@
+# Secrets — never commit these.
+.env
+.env.*
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Local scratch
+scratch/
+
+# Agent workflow state and archives — not app source.
+cartv-m3u-iptv-player-cast/
+REA_workflow_Rushabh.zip

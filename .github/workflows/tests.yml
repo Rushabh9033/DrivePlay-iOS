@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # macos-26 carries Xcode 26, which the app needs: the CarPlay rows use
+    # CPPlaybackConfiguration (iOS 26.4+), and that symbol does not exist in an
+    # older SDK — an availability check cannot compile around a missing symbol.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      # The tests need a signed Simulator build (an unsigned app has no
+      # application-identifier, so the Keychain refuses every write).
+      - name: Run the tests
+        run: scripts/run_tests.sh

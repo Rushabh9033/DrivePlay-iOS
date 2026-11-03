@@ -1,0 +1,179 @@
+name: CarTV
+options:
+  bundleIdPrefix: com.rushabh
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+settings:
+  SWIFT_VERSION: "5.0"
+  ENABLE_BITCODE: "NO"
+  ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  # Which CarPlay category this build asks for: "audio" or "video".
+  #
+  # Apple grants one category per app and the capability lives on the app id,
+  # so a build is signed with the entitlement or it does not build at all. The
+  # setting picks the entitlements file and tells the app what it got — the two
+  # can never disagree. Flip it to "video" once the app id carries the CarPlay
+  # Video capability.
+  CARPLAY_CATEGORY: "audio"
+targets:
+  CarTV:
+    type: application
+    platform: iOS
+    sources:
+      - path: CarTV/Sources
+      - path: CarTV/Resources
+      # The encoder and the server, shared with the broadcast extension.
+      - path: Shared
+    info:
+      path: CarTV/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: DrivePlay
+        CFBundleName: DrivePlay
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: "1.2.0"
+        CFBundleVersion: "1"
+        # The CarPlay category this build carries. The app only asks CarPlay for
+        # video when it is signed with the video entitlement.
+        CarPlayCategory: $(CARPLAY_CATEGORY)
+        LSRequiresIPhoneOS: true
+        UIRequiresFullScreen: true
+        NSAppTransportSecurity:
+          # Plain HTTP is only allowed on the local network (NSAllowsLocalNetworking);
+          # the in-app browser tab may load any site it is asked to.
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoadsInWebContent: true
+        NSBonjourServices:
+          - "_lyntracast._tcp"
+        NSCameraUsageDescription: "Used to scan QR codes so you can add a playlist quickly."
+        NSLocalNetworkUsageDescription: "DrivePlay uses your local network to receive video casts and connect to local media servers."
+        NSMicrophoneUsageDescription: "DrivePlay uses the microphone for voice search."
+        NSSpeechRecognitionUsageDescription: "DrivePlay turns your speech into text for voice searches."
+        NSPhotoLibraryUsageDescription: "Used to import videos from your photo library."
+        NSLocationWhenInUseUsageDescription: "DrivePlay connects directly to GPS satellites to calculate your real-time speed, heading, and altitude completely offline."
+        UIBackgroundModes:
+          - "audio"
+          # The phone's screen is shared to the car while the app is in the
+          # background: the app has to keep running while the capture runs.
+          - "screen-capture"
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: "CarPlay Configuration"
+                UISceneDelegateClassName: "CarTV.CarPlaySceneDelegate"
+            UIWindowSceneSessionRoleExternalDisplayNonInteractive:
+              - UISceneConfigurationName: "External Display Non-Interactive"
+                UISceneDelegateClassName: "CarTV.ExternalDisplaySceneDelegate"
+            UIWindowSceneSessionRoleExternalDisplay:
+              - UISceneConfigurationName: "External Display"
+                UISceneDelegateClassName: "CarTV.ExternalDisplaySceneDelegate"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rushabh.cartvv
+        DEVELOPMENT_TEAM: "47T499AR2T"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_ENTITLEMENTS: CarTV/Resources/CarTV.$(CARPLAY_CATEGORY).entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: CarTV/Resources/Info.plist
+      configs:
+        Debug:
+          ENABLE_TESTABILITY: YES
+    dependencies:
+      - target: ScreenRelay
+    frameworks:
+      - framework: AVFoundation.framework
+      - framework: AVKit.framework
+      - framework: MediaPlayer.framework
+      - framework: Speech.framework
+      - framework: Network.framework
+      - framework: WebKit.framework
+      - framework: StoreKit.framework
+      - framework: PhotosUI.framework
+      - framework: UniformTypeIdentifiers.framework
+      - framework: CarPlay.framework
+      - framework: ReplayKit.framework
+      - framework: CoreLocation.framework
+  ScreenRelay:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ScreenRelay
+      # The encoder and the server, shared with the app.
+      - path: Shared
+    info:
+      path: ScreenRelay/Info.plist
+      properties:
+        CFBundleDisplayName: DrivePlay Screen Relay
+        CFBundleName: DrivePlay Screen Relay
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleShortVersionString: "1.2.0"
+        CFBundleVersion: "1"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: ScreenRelay.SampleHandler
+          RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rushabh.cartvv.ScreenRelay
+        DEVELOPMENT_TEAM: "47T499AR2T"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: ScreenRelay/Info.plist
+    frameworks:
+      - framework: ReplayKit.framework
+      - framework: AVFoundation.framework
+      - framework: Network.framework
+  CarTVTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CarTV/Tests
+    dependencies:
+      - target: CarTV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rushabh.cartvv.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CarTV.app/CarTV"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        # The test bundle needs a plist of its own to be signed.
+        GENERATE_INFOPLIST_FILE: YES
+        # A test bundle that runs **on the phone** has to be signed like any
+        # other app: without a team, `xcodebuild test` against a device fails
+        # with "Signing for CarTVTests requires a development team".
+        DEVELOPMENT_TEAM: "47T499AR2T"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+
+# A shared scheme: the test target has to be part of it, and Xcode (or CI) has
+# to find the same scheme on every machine.
+schemes:
+  CarTV:
+    build:
+      targets:
+        CarTV: all
+    run:
+      config: Debug
+      # The local StoreKit configuration, so the Pro purchase path can be
+      # exercised in the Simulator without a Sandbox account.
+      storeKitConfiguration: Configuration/DrivePlay.storekit
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - CarTVTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+

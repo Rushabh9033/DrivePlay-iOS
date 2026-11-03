@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CarPlay Video Permission — Simple Steps</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  :root {
+    --ink: #1b1b1f;
+    --soft: #5b5b66;
+    --line: #d9d9e0;
+    --accent: #0a5bd3;
+    --box: #f3f5f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12.5pt; line-height: 1.45; color: var(--ink);
+    margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1 { font-size: 21pt; line-height: 1.15; margin: 0 0 2mm; letter-spacing: -0.2px; }
+  .sub { color: var(--soft); font-size: 11pt; margin: 0 0 7mm; }
+  h2 {
+    font-size: 14pt; margin: 8mm 0 3mm; padding-bottom: 1.5mm;
+    border-bottom: 1.5px solid var(--line);
+  }
+  h2 .num {
+    display: inline-block; min-width: 7mm; height: 7mm; line-height: 7mm;
+    text-align: center; background: var(--accent); color: #fff;
+    border-radius: 50%; font-size: 10.5pt; margin-right: 3mm;
+  }
+  p { margin: 0 0 3mm; }
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1.5mm; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 4mm; }
+  th, td { text-align: left; padding: 2.2mm 2.5mm; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--box); font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.4px; color: var(--soft); }
+  td:first-child { width: 38%; font-weight: 600; }
+  pre {
+    background: var(--box); border: 1px solid var(--line); border-radius: 5px;
+    padding: 3.5mm 4mm; font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9.5pt; line-height: 1.4; white-space: pre-wrap;
+    margin: 0 0 4mm; color: #22222a;
+  }
+  .note {
+    background: #fff8e6; border: 1px solid #f0dca8; border-left: 4px solid #e0a800;
+    padding: 3mm 4mm; border-radius: 4px; margin: 0 0 4mm;
+  }
+  .done {
+    background: #eef7ee; border: 1px solid #c6e0c6; border-left: 4px solid #2e9e3e;
+    padding: 3mm 4mm; border-radius: 4px; margin: 0 0 4mm;
+  }
+  .foot { color: var(--soft); font-size: 10pt; border-top: 1px solid var(--line); margin-top: 8mm; padding-top: 3mm; }
+  .link { color: var(--accent); word-break: break-all; }
+  .avoid-break { break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<h1>CarPlay Video Permission — Simple Steps</h1>
+<p class="sub">For the admin of the Apple Developer account (the account that owns the DrivePlay app).</p>
+
+<div class="note avoid-break">
+  <strong>Why is this needed?</strong> Apple only lets a car show video for apps that Apple has
+  approved. So one request has to be sent to Apple <strong>from the Apple account</strong>, and it
+  includes a legal agreement (the CarPlay Entitlement Addendum) that only the account owner can accept.
+  After Apple approves, the developer does the rest. Nothing else is needed from the admin.
+</div>
+
+<h2><span class="num">1</span>Open the website</h2>
+<p>Go to <span class="link">https://developer.apple.com/contact/carplay/</span></p>
+
+<h2><span class="num">2</span>Sign in</h2>
+<p>Use the main Apple ID of the account (the one that owns <span class="link">com.rushabh.cartvv</span>). Type the 2FA code that comes to the phone.</p>
+
+<h2><span class="num">3</span>Fill the boxes</h2>
+<table>
+  <tr><th>Box</th><th>What to type</th></tr>
+  <tr><td>App name</td><td><span class="link">DrivePlay</span></td></tr>
+  <tr><td>Bundle ID</td><td><span class="link">com.rushabh.cartvv</span></td></tr>
+  <tr><td>Version</td><td><span class="link">1.2.0</span></td></tr>
+  <tr><td>App Store link</td><td>App is still in development, not on the App Store yet</td></tr>
+  <tr><td>App type</td><td><strong>Video</strong></td></tr>
+  <tr><td>Which countries</td><td>All countries</td></tr>
+</table>
+
+<h2><span class="num">4</span>The big text box (app description)</h2>
+<p>Copy this and paste it:</p>
+<pre>DrivePlay is an iPhone app that plays live TV and video playlists in the car through CarPlay.
+
+The user adds their own media server or playlist (M3U playlist, Xtream Codes, Plex), and the
+app shows the channels as a CarPlay list. Choosing a channel starts that stream in the car's
+now-playing area, where the car screen shows the video while the car is parked.
+
+DrivePlay is a player: it does not host, sell or distribute any video. All content comes from
+services the user adds themselves, and the user signs in with their own credentials. The app
+also supports AirPlay video streaming, so a stream can be sent to an AirPlay display.
+
+CarPlay is used only for browsing the channels and starting playback; every part of the flow
+works from the car screen alone.</pre>
+
+<h2><span class="num">5</span>If they ask "do you own the content?"</h2>
+<p>Copy this and paste it (only if it is true of the app):</p>
+<pre>DrivePlay does not provide video content and holds no content rights. It is a client: the
+content is served by the user's own server or subscription, and the app only sends the player
+the stream URL that the user's own account returned. There is no catalogue, no library and no
+third-party content in the app.</pre>
+
+<h2><span class="num">6</span>If they ask for a video showing it working</h2>
+<p>Record three short parts:</p>
+<ol>
+  <li>the app on the iPhone,</li>
+  <li>the same app on the car screen,</li>
+  <li>one channel playing video on the car screen.</li>
+</ol>
+<p>Upload it to Google Drive (or iCloud, or YouTube as an unlisted video) and paste the link.</p>
+
+<h2><span class="num">7</span>Agree and send</h2>
+<ul>
+  <li>Tick the box (or open the link) for the <strong>CarPlay Entitlement Addendum</strong> and accept it.
+      It just says: no games, no social media, and everything must work from the car screen.</li>
+  <li>Press <strong>Submit</strong>.</li>
+</ul>
+
+<h2><span class="num">8</span>Wait</h2>
+<p>Apple replies by email within a few days. If they ask any question, forward the question to the developer — the answers above are the technical content. <strong>Nothing else to do after submitting.</strong></p>
+
+<div class="done avoid-break">
+  <strong>After Apple says yes — the developer's job (the admin does nothing).</strong>
+  <ol style="margin-bottom:0">
+    <li>Turn on the “CarPlay Video” switch on the app’s App ID page.</li>
+    <li>Make a new signing profile and build the app onto the phone.</li>
+    <li>Done — the car screen shows the channel list and plays the video.</li>
+  </ol>
+</div>
+
+<div class="note avoid-break">
+  <strong>One decision before submitting.</strong> App type <strong>Video</strong> (the new one, needs
+  iOS 27, the car shows the app as a video app) or <strong>Audio</strong> (older, works in many more
+  cars, may still play video, but the car shows it as a music app). Apple allows only one of the two
+  per app. If unsure, pick <strong>Video</strong>.
+</div>
+
+<p class="foot">Full technical version and sources: <span class="link">docs/carplay-video-request.md</span> in the DrivePlay project. Prepared 2026-11-02.</p>
+
+</body>
+</html>
