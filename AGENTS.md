@@ -125,6 +125,15 @@ it is set in `project.yml`.
   **system** paints the bar, the selection marker and the list chrome, so the app's palette
   can only be expressed through the artwork it hands over and the tab icons. That is the whole
   limit of "make it dark and green" on CarPlay.
+- **A search result is not a list row either.** `CPSearchTemplate` gives the app the
+  results (`searchTemplate(_:updatedSearchText:completionHandler:)`) and takes the selection
+  back through `searchTemplate(_:selectedResult:completionHandler:)` — the header says the
+  app must call the completion handler *"when you have handled the row selection"*, so the
+  row's own `CPListItem.handler` is **not** called for a search result. A delegate that only
+  answers the completion handler leaves the car with a search that finds channels and plays
+  none of them. The result carries only the channel's name, so the app has to remember which
+  channel each result stands for (the item's own identity — `ObjectIdentifier` — is the only
+  thing two channels with the same name do not share).
 - **A row of cards is not a row of items.** `CPListImageRowItem(text:cardElements:allowsMultipleLines:)`
   (iOS 26+) is the horizontally scrollable card row of the reference interface, but a card row
   is **not** a `CPListItem`: its title lives on `CPListImageRowItemCardElement.title`, and the

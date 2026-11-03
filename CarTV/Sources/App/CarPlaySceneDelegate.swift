@@ -380,6 +380,15 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     // MARK: - Search
 
+    /// The channel each result of the last search stands for.
+    ///
+    /// A search result is **not** a list row: CarPlay hands the selection to
+    /// `searchTemplate(_:selectedResult:completionHandler:)` and never calls the
+    /// row's own handler, so the app has to know what the result was. The row
+    /// only carries the channel's name — two channels can share one — so the
+    /// result is remembered by the item itself.
+    private var searchResults: [ObjectIdentifier: Channel] = [:]
+
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
                                updatedSearchText searchText: String,
                                completionHandler: @escaping ([CPListItem]) -> Void) {
@@ -391,14 +400,24 @@ public final class CarPlaySceneDelegate: UIResponder,
             ($0.tvgId?.localizedCaseInsensitiveContains(query) ?? false)
         }
 
-        completionHandler(filtered.prefix(30).map { channel in
-            CarPlayTemplates.channelItem(channel, owner: self, prefersVideo: Self.isEntitledToVideo)
-        })
+        var results: [ObjectIdentifier: Channel] = [:]
+        let items = filtered.prefix(30).map { channel -> CPListItem in
+            let item = CarPlayTemplates.channelItem(channel, owner: self, prefersVideo: Self.isEntitledToVideo)
+            results[ObjectIdentifier(item)] = channel
+            return item
+        }
+        searchResults = results
+        completionHandler(items)
     }
 
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
                                selectedResult item: CPListItem,
                                completionHandler: @escaping () -> Void) {
+        if let channel = searchResults[ObjectIdentifier(item)] {
+            play(channel: channel)
+        } else {
+            NSLog("DRIVEPLAY the selected search result stands for no channel")
+        }
         completionHandler()
     }
 }

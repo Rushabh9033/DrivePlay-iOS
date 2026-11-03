@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A search result picked on the car played nothing.** The car's search is a
+  `CPSearchTemplate`: the app hands CarPlay the results and CarPlay hands the
+  selection back through `searchTemplate(_:selectedResult:completionHandler:)`
+  — the row's own handler is never called for a search result. The delegate
+  answered the completion handler and stopped, so the search found channels
+  and played none of them. The result now carries the channel it stands for,
+  and picking it plays that channel.
+
 - **The voice search showed "com.apple.coreaudio.avfaudio error 1852797029"
   and never listened.** The player holds the audio session as `.playback` — a
   category with **no input route** — and the recorder's engine was born on

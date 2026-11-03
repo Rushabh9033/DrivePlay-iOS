@@ -478,3 +478,46 @@ final class CarPlayCatalogueIsolationTests: XCTestCase {
         XCTAssertEqual(store.allGroups.map(\.name).sorted(), ["News", "Sports"])
     }
 }
+
+/// The car's search has to play what it finds.
+@MainActor
+final class CarPlaySearchTests: XCTestCase {
+
+    /// AC69: a result the user picks in the car's search plays the channel it
+    /// stands for.
+    ///
+    /// A search result is **not** a list row. CarPlay hands the selection to
+    /// `searchTemplate(_:selectedResult:completionHandler:)` and never calls
+    /// the row's own handler — so a delegate that only answers the completion
+    /// handler leaves the car with a search that finds channels and plays none
+    /// of them.
+    func test_AC69_a_selected_search_result_plays_the_channel_it_stands_for() {
+        let store = PlaylistStore.shared
+        let originalChannels = store.channels
+        defer {
+            store.channels = originalChannels
+            store.rebuildIndex()
+            PlaybackManager.shared.closePlayer()
+        }
+
+        // A file URL that is not there: the player fails to load it, which is
+        // harmless — what matters is which channel was asked for.
+        let missing = URL(fileURLWithPath: "/tmp/driveplay-no-such-stream.m3u8")
+        let sky = Channel(name: "Sky Sports HD", streamURL: missing, groupTitle: "Sports")
+        let news = Channel(name: "BBC News", streamURL: missing, groupTitle: "News")
+        store.channels = [sky, news]
+        store.rebuildIndex()
+
+        let delegate = CarPlaySceneDelegate()
+        var results: [CPListItem] = []
+        delegate.searchTemplate(CPSearchTemplate(), updatedSearchText: "sky") { items in
+            results = items
+        }
+        XCTAssertEqual(results.count, 1, "the search did not find the channel")
+
+        delegate.searchTemplate(CPSearchTemplate(), selectedResult: results[0]) {}
+
+        XCTAssertEqual(PlaybackManager.shared.currentChannel?.id, sky.id,
+                       "the selected search result did not play its channel")
+    }
+}

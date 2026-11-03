@@ -92,6 +92,7 @@ carries the criterion number (`test_AC<n>_…`), so the trace is mechanical.
 | 66 | A rebuilt screen does not draw the cards again | `CarPlayArtworkTests` |
 | 67 | The voice search can take the microphone from the player | `VoiceSearchTests` |
 | 68 | The player's audio session comes back when the voice search ends | `VoiceSearchTests` |
+| 69 | A search result picked on the car plays the channel it stands for | `CarPlaySearchTests` |
 
 ## Verification
 
