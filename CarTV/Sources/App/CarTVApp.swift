@@ -10,6 +10,16 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
         // user from the Control Center, so the app has to be ready before the
         // broadcast extension announces its stream.
         ScreenShareService.shared.startRelay()
+
+        // A phone that locks itself in the middle of a test run takes the app
+        // down with it: the app is backgrounded, the in-flight stream work
+        // stops, XCTest times the test out and reports a failure that never
+        // happened. Only the app can hold the idle timer, so the tests do it
+        // here — a locked phone is the one thing a test run cannot recover from.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            application.isIdleTimerDisabled = true
+            NSLog("DRIVEPLAY the idle timer is off (the tests are running)")
+        }
         return true
     }
 

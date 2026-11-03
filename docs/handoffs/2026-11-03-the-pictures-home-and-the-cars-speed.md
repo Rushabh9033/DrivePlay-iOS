@@ -93,6 +93,7 @@ moment is now the system's answer.
 | File | What changed |
 |------|--------------|
 | `CarTV/Sources/Services/PlaybackManager.swift` | the picture's home (the intent, the generation, `systemSaysPictureIsOnCar(_:)`, `carDisconnected()`), the cached now-playing artwork, the flags set before the item is attached |
+| `CarTV/Sources/App/CarTVApp.swift` | the idle timer is held while the tests run (see below) |
 | `CarTV/Sources/Views/Player/CarOutputSwitch.swift` | the **"Sending to Car…"** state |
 | `CarTV/Sources/App/CarPlaySceneDelegate.swift` | `carDisconnected()` on the scene's disconnect |
 | `CarTV/Sources/Views/CarMode/CarPlayArtwork.swift` | the request gap is **per host** |
@@ -108,13 +109,32 @@ moment is now the system's answer.
 
 * `xcodebuild -sdk iphoneos -destination 'generic/platform=iOS' CARPLAY_CATEGORY=video build` → **BUILD SUCCEEDED**
 * `scripts/device_test.sh` on the **physical iPhone 13**
-  (`00008110-001C60423CB8401E`) → **`Executed 132 tests, with 8 tests skipped
-  and 0 failures (0 unexpected) in 34.910 seconds`** → `** TEST SUCCEEDED **`
-* the eight skips are the repository contract tests, which read a file of the
+  (`00008110-001C60423CB8401E`) → **`Executed 132 tests, with 7 tests skipped
+  and 0 failures (0 unexpected) in 35.031 seconds`** → `** TEST SUCCEEDED **`,
+  and again **35.350 s / 0 failures** (19:14) — two consecutive green runs,
+  **no app restart in either**
+* the seven skips are the repository contract tests, which read a file of the
   checkout that does not exist on the phone (`RepositoryFixture.skipUnlessPresent()`)
 * the SPEC ↔ test trace is exact: **110 ACs ↔ 110 test names**
 * the **iPhone 18 Pro simulator was not touched**: not booted, not installed
   to, not installed from. Every build used `generic/platform=iOS`.
+
+## The phone that locked itself
+
+Four runs in a row died in AC32/AC43 with *"Restarting after unexpected exit,
+crash, or test timeout"* and **no crash report** — a kill, not a crash. Xcode
+said who was doing it: *"Xcode cannot launch CarTVTests on Rushabh's Iphone
+because the device is locked."* A locked screen **backgrounds** the app, the
+in-flight stream work stops, and XCTest blames whichever test was running —
+on code that had not changed (AC32/AC43 touch none of it, and AC32 passes on
+its own).
+
+Only the app can hold the phone's idle timer, so the app holds it while the
+tests run (`isIdleTimerDisabled`, set when `XCTestConfigurationFilePath` is in
+the environment). The suite has been green twice in a row since, with no app
+restart at all. The microphone test runs again as well (the car no longer
+holds the phone's audio route), which is why there are seven skips now and
+not eight.
 
 ## Still needs a human
 

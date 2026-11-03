@@ -614,18 +614,22 @@ public final class PlaybackManager: ObservableObject {
             forInterval: CMTime(seconds: 0.25, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self = self else { return }
-            self.currentTime = time.seconds
-            // Dismiss loader once playback is actually rendering frames
-            if self.player?.timeControlStatus == .playing && (self.currentTime > 0.05 || (self.player?.rate ?? 0) > 0) {
-                if self.isBuffering {
-                    self.isBuffering = false
+            // The observer is asked for the main queue, so it is on the main
+            // actor — the player is the app's, and only the main actor touches it.
+            MainActor.assumeIsolated {
+                guard let self = self else { return }
+                self.currentTime = time.seconds
+                // Dismiss loader once playback is actually rendering frames
+                if self.player?.timeControlStatus == .playing && (self.currentTime > 0.05 || (self.player?.rate ?? 0) > 0) {
+                    if self.isBuffering {
+                        self.isBuffering = false
+                    }
+                    if !self.isPlaying {
+                        self.isPlaying = true
+                    }
                 }
-                if !self.isPlaying {
-                    self.isPlaying = true
-                }
+                self.updateNowPlayingInfo()
             }
-            self.updateNowPlayingInfo()
         }
         
         bufferEmptyObserver = item.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] itm, _ in

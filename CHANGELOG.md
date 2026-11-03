@@ -7,6 +7,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A phone that locked itself took the app down in the middle of a test
+  run.** A locked screen backgrounds the app, so the stream work stops and
+  the test times out — and the failure was reported against whichever test
+  happened to be running, on code that had not changed. Only the app can hold
+  the phone's idle timer, so the app holds it while the tests run. The suite
+  on the phone is green again, twice in a row, with no app restart at all.
+
 - **The picture was on neither screen — "sometimes only in the car, sometimes
   only on the phone".** The hand-off hid the phone's picture *straight away*,
   so a car whose video endpoint was not ready yet left the video on nothing at

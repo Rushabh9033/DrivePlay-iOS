@@ -689,6 +689,17 @@ it is set in `project.yml`.
 - **A missing file is not proof that a feature is absent.** Two wrong conclusions came from
   inferring "not installed" from a path that no longer exists in Xcode 27. Check what the tool
   actually uses before concluding a runtime is missing.
+- **A test that fails on the phone may be the phone.** A phone that **locks itself** takes the
+  app under test down with it: the app is backgrounded, the in-flight work stops, and XCTest
+  reports *"Restarting after unexpected exit, crash, or test timeout"* and blames whichever test
+  was running — on code that never changed. **No crash report is written** (a kill, not a crash),
+  and the only proof is in Xcode's own output: *"Xcode cannot launch CarTVTests on Rushabh's
+  Iphone because the device is locked."* Only the app can hold the idle timer, so the app holds it
+  while the tests run (`isIdleTimerDisabled`, set when `XCTestConfigurationFilePath` is in the
+  environment). Do not blame the code, the thermal state or the memory before reading that
+  message — and check `xcrun devicectl device info lockState` and
+  `xcrun devicectl device info displays` (the backlight state) before believing a device failure.
+  `idevicesyslog` is installed and gives the device's own log while the run happens.
 
 ## Data model gotcha
 
