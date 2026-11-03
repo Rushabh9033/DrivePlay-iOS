@@ -41,6 +41,10 @@ it is set in `project.yml`.
 - **`project.yml` is the source of truth for `Info.plist`.** `xcodegen generate` overwrites
   `CarTV/Resources/Info.plist` from `project.yml`. Never hand-edit the plist — it will be
   silently reverted. After editing `project.yml`, run `xcodegen generate` and re-check the plist.
+- **A deleted source file needs `xcodegen generate` too.** The generated `project.pbxproj`
+  names every source file, so removing one from the disk leaves the build failing with
+  *"Build input file cannot be found"* — the file is still in the project. Regenerate
+  (`xcodegen generate`) after adding or removing a file, not just after editing `project.yml`.
 - **The CarPlay scene configuration name must be `"CarPlay Configuration"`.**
   `AppDelegate.configurationForConnecting` looks up
   `UISceneConfiguration(name: "CarPlay Configuration", sessionRole: .carTemplateApplication)`.

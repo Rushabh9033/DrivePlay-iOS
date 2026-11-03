@@ -444,6 +444,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **A second, unused in-car browser.** `CarBrowserView` was a whole second
+  implementation of the browser — its own `WKWebView`, its own tab state, its
+  own list of preset sites — and nothing in the app ever showed it. It was a
+  second source of truth for "the sites": the car's Browser tab uses
+  `BrowserCatalog`, the dead view carried YouTube/Twitch/Bilibili/Vimeo. The
+  view is gone; the `WKWebView` wrapper it held is now next to the browser
+  that actually uses it.
 - A stale 56 KB Mach-O binary at the repository root, compiled from the
   deleted `CarTV/Tests/main.swift`. Nothing referenced it and it cannot run
   standalone.

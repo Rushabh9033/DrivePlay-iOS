@@ -456,6 +456,26 @@ public struct InAppBrowserView: View {
     }
 }
 
+// MARK: - The web view itself
+
+public struct WebViewRepresentable: UIViewRepresentable {
+    public let webView: WKWebView
+
+    public func makeUIView(context: Context) -> WKWebView {
+        webView.allowsBackForwardNavigationGestures = true
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.isOpaque = true
+        webView.backgroundColor = .systemBackground
+        webView.scrollView.contentInsetAdjustmentBehavior = .automatic
+        return webView
+    }
+
+    public func updateUIView(_ uiView: WKWebView, context: Context) {
+        uiView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        uiView.setNeedsLayout()
+    }
+}
+
 // MARK: - Active Tab Web View Container (Observes Tab Directly for Instant Updates)
 
 public struct ActiveTabWebViewContainer: View {
