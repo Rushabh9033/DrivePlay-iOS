@@ -409,44 +409,44 @@ public struct SatelliteHUDView: View {
                             .foregroundColor(.white.opacity(0.7))
                             .offset(x: -20)
                         
-                        // Dual-color Needle
-                        VStack(spacing: 0) {
-                            FullNeedleTriangle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [Color(red: 1.0, green: 0.25, blue: 0.25), Color(red: 0.9, green: 0.1, blue: 0.1)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(width: 6, height: 13)
-                                .shadow(color: Color.red.opacity(0.7), radius: 2)
-                            
-                            Circle()
-                                .fill(neonGreen)
-                                .frame(width: 4, height: 4)
-                            
-                            FullNeedleTriangle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [neonGreen.opacity(0.4), emeraldGlow],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                                .frame(width: 6, height: 13)
-                                .rotationEffect(.degrees(180))
-                        }
                     }
-                    .rotationEffect(.degrees(hud.headingDegrees))
-                    .animation(.spring(response: 0.35, dampingFraction: 0.75), value: hud.headingDegrees)
-                    
-                    // Fixed Vehicle Forward Marker
-                    FullNeedleTriangle()
-                        .fill(neonGreen)
-                        .frame(width: 5, height: 4)
-                        .rotationEffect(.degrees(180))
-                        .offset(y: -32)
+                    .rotationEffect(.degrees(hud.compassRoseRotationDegrees))
+                    .animation(.linear(duration: 0.8), value: hud.compassRoseRotationDegrees)
+                    // The needle is **fixed**: it points the way the car faces
+                    // and the rose turns under it. A needle inside the rose
+                    // turns with it and always says north.
+                    //
+                    // It is **green**, not red: red is the rose's own "N", and
+                    // a red needle that always points up says "north" while
+                    // the letters say something else — which is what made the
+                    // compass look wrong.
+                    VStack(spacing: 0) {
+                        FullNeedleTriangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [neonGreen, emeraldGlow],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: 6, height: 13)
+                            .shadow(color: neonGreen.opacity(0.8), radius: 2)
+
+                        Circle()
+                            .fill(neonGreen)
+                            .frame(width: 4, height: 4)
+
+                        FullNeedleTriangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [neonGreen.opacity(0.4), emeraldGlow],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(width: 6, height: 13)
+                            .rotationEffect(.degrees(180))
+                    }
                 }
                 
                 // Digital Heading Readout Badge
@@ -459,9 +459,9 @@ public struct SatelliteHUDView: View {
                         .font(.system(size: 13, weight: .bold, design: .monospaced))
                         .foregroundColor(.white)
                     
-                    Text("BEARING")
+                    Text(hud.isCompassReliable ? "BEARING" : "GPS COURSE")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.gray)
+                        .foregroundColor(hud.isCompassReliable ? .gray : .orange)
                 }
             }
             .frame(height: 70)

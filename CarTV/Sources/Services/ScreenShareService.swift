@@ -135,6 +135,14 @@ public final class ScreenShareService: ObservableObject {
     /// extension announces its stream. It therefore does not latch the share
     /// state: a capture or the demo picture can still be started while it waits.
     @Published public private(set) var isWaitingForBroadcast = false
+    /// The page the **car** asked for, waiting to be sent.
+    ///
+    /// CarPlay has no web view of its own, so a page the user opens on the car
+    /// runs on the phone and reaches the car through the phone's screen share.
+    /// iOS always asks the **user** to start a share, so the phone has to say
+    /// that the car is waiting — this is that note, and it is cleared as soon
+    /// as the broadcast arrives.
+    @Published public private(set) var pendingCarPage: String?
     /// The playlist the app itself plays, on the loopback interface.
     @Published public private(set) var playlistURL: URL?
     /// The same playlist on the local network, for a screen that is not this phone.
@@ -284,6 +292,16 @@ public final class ScreenShareService: ObservableObject {
         if Self.startsDemoInsteadOfBroadcast { startDemo() }
     }
 
+    /// The car asked for a page — the phone runs it and the share carries it.
+    ///
+    /// The relay is started here (it has to be listening **before** the user
+    /// picks the broadcast in the system list) and the phone is told that the
+    /// car is waiting, so the user knows the share has to be started.
+    public func carRequestedPage(_ address: String) {
+        pendingCarPage = address
+        startRelay()
+    }
+
     /// True on the Simulator, where the demo picture stands in for the screen.
     ///
     /// It is a build-time fact, not a guess at run time: the Simulator has no
@@ -352,6 +370,8 @@ public final class ScreenShareService: ObservableObject {
         if demo != nil || isCapturing { stop() }
         guard let url = URL(string: "http://127.0.0.1:\(port)/\(token)/live.m3u8") else { return }
         isWaitingForBroadcast = false
+        // The share is running, so the car is no longer waiting for one.
+        pendingCarPage = nil
         playlistURL = url
         state = .sharing
         // The car's screen shows what the app plays — so the app plays the stream.

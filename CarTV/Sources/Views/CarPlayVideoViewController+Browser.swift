@@ -510,6 +510,7 @@ extension InCarAutomotiveController {
     }
     
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        hasReloadedAfterCrash = false
         browserProgressView.setProgress(1.0, animated: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.browserProgressView.isHidden = true
@@ -528,6 +529,18 @@ extension InCarAutomotiveController {
     }
     
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        NSLog("DRIVEPLAY the page's web process died")
+        // A reload **here** is a loop: the page that killed the process is
+        // loaded again, kills it again, and the app is taken down with it
+        // (the watchdog kills an app that stops answering). One reload is
+        // allowed — a page that dies twice is the page's own fault, so the
+        // catalogue takes the screen back.
+        if hasReloadedAfterCrash {
+            hasReloadedAfterCrash = false
+            handleBrowserHome()
+            return
+        }
+        hasReloadedAfterCrash = true
         webView.reload()
     }
 }

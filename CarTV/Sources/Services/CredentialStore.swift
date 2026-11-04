@@ -159,6 +159,30 @@ public enum CredentialRedactor {
         return changed ? (components.url ?? url) : url
     }
 
+    /// A URL that is safe to **write into a log**.
+    ///
+    /// The device's log is readable by anything attached to the phone — an
+    /// Xcode console, `idevicesyslog`, a sysdiagnose — so the parts of a URL
+    /// that carry a secret are dropped: the user info, the query, and every
+    /// path segment but the last (Xtream keeps the user and the password
+    /// there). What is left is the host and the name of the file, which is
+    /// what says *which* stream failed.
+    public static func safeForLog(_ url: URL) -> String {
+        guard let host = url.host else { return "<no host>" }
+        let scheme = url.scheme ?? "https"
+        let name = url.lastPathComponent
+        return name.isEmpty ? "\(scheme)://\(host)" : "\(scheme)://\(host)/\(name)"
+    }
+
+    /// A URL **string** that is safe to write into a log.
+    ///
+    /// A string that is not a URL at all is not written out either: it may
+    /// still be a password the user pasted.
+    public static func safeForLog(_ string: String) -> String {
+        guard let url = URL(string: string), url.host != nil else { return "<not a URL>" }
+        return safeForLog(url)
+    }
+
     /// The URL with its secrets put back in.
     public static func restore(_ url: URL, credentials: SourceCredentials?) -> URL {
         guard let credentials, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }

@@ -217,15 +217,15 @@ public final class PlaybackManager: ObservableObject {
         updateNowPlayingInfo()
 
         // A car is connected, so the picture belongs to it: a video the user
-        // starts on the phone goes to the car's display at once. The car asked
-        // for its own video (`presentation == .hidden`), so there is nothing to
-        // hand over then.
+        // starts on the phone goes to the car's display at once — and a video
+        // the **car** asked for is offered to it again and again, because the
+        // car's video endpoint may not be there yet when the row is tapped.
         //
         // The picture is **not** offered again straight away: the item was
         // attached a moment ago with the route already open, so the system
         // has looked at it. Offering it again would build the player a second
         // time — the stutter that made a start feel laggy.
-        if isCarConnected && presentation != .hidden {
+        if isCarConnected {
             handOffToCar(offerImmediately: false)
         }
     }
@@ -288,6 +288,17 @@ public final class PlaybackManager: ObservableObject {
         updateVideoOutput()
         player.play()
         updateNowPlayingInfo()
+
+        // The share is **for the car**: the picture is offered to it, and
+        // offered again while the car has not taken it. Without this the share
+        // played on the phone and the car's display stayed black.
+        //
+        // The phone must not show the video it is capturing, so the phone's own
+        // picture of the share stays hidden.
+        if isCarConnected {
+            phonePresentationMode = .hidden
+            handOffToCar(offerImmediately: false)
+        }
     }
 
     /// Stops the screen-share stream, if that is what is playing.
@@ -441,7 +452,17 @@ public final class PlaybackManager: ObservableObject {
         }
     }
 
-    /// The picture is offered again a few times.
+    /// The gaps between the offers of the picture to the car.
+    ///
+    /// The first gap is long enough for the video to **start**: an offer
+    /// rebuilds the player and drops the buffer, so an offer that lands on the
+    /// start is the stutter the user feels as "laggy". After that the gaps
+    /// grow — a car whose endpoint is not there yet is not hammered — and the
+    /// last one repeats, because the endpoint can take **two minutes** to
+    /// appear.
+    private static let offerGaps: [TimeInterval] = [2.5, 2.5, 4, 7, 12, 20, 30]
+
+    /// The picture is offered again and again.
     ///
     /// The car's video endpoint appears a moment **after** the scene connects
     /// and the route is only looked at when the picture is offered — so the
@@ -449,16 +470,17 @@ public final class PlaybackManager: ObservableObject {
     /// the first sign that the picture is on the car, at the first sign that
     /// the user wants it back, and when the hand-off is replaced by a newer
     /// one.
-    private func scheduleReoffers(generation: Int) {
-        for delay in [1.0, 3.0, 8.0, 20.0, 45.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self = self,
-                      self.handOffGeneration == generation,
-                      self.pictureIntent == .car,
-                      self.isCarConnected,
-                      !self.isPlayingOnCar else { return }
-                self.offerPictureToTheCar()
-            }
+    private func scheduleReoffers(generation: Int, gapIndex: Int = 0) {
+        let gaps = Self.offerGaps
+        let gap = gaps[min(gapIndex, gaps.count - 1)]
+        DispatchQueue.main.asyncAfter(deadline: .now() + gap) { [weak self] in
+            guard let self = self,
+                  self.handOffGeneration == generation,
+                  self.pictureIntent == .car,
+                  self.isCarConnected,
+                  !self.isPlayingOnCar else { return }
+            self.offerPictureToTheCar()
+            self.scheduleReoffers(generation: generation, gapIndex: gapIndex + 1)
         }
     }
 
@@ -756,8 +778,13 @@ public final class PlaybackManager: ObservableObject {
                     self.isBuffering = false
                     self.isPlaying = false
                     // Say why the picture is not there — a silent failure is the
-                    // one nobody can act on.
-                    NSLog("DRIVEPLAY playback failed: %@", String(describing: itm.error))
+                    // one nobody can act on. The error carries the stream URL,
+                    // and the stream URL carries the account's token, so
+                    // neither is logged as it is.
+                    let failure = itm.error.map { $0 as NSError }
+                    NSLog("DRIVEPLAY playback failed: %@ %ld — %@",
+                          failure?.domain ?? "?", failure?.code ?? 0,
+                          (itm.asset as? AVURLAsset).map { CredentialRedactor.safeForLog($0.url) } ?? "<no URL>")
                 }
             }
         }

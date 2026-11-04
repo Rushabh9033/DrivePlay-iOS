@@ -5,7 +5,101 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **The screen stream's token was 32 bits wide.** The stream is the phone's
+  **screen**, served over the local network, and the token in its path is the
+  only thing that keeps it private — eight hex characters are 2³² guesses,
+  which is a weekend's work for anyone on the same Wi-Fi. The token is **128
+  bits** now.
+
+- **A failed stream logged the account's token.** The playback error was
+  logged as it was, and an `NSError`'s description carries the URL that
+  failed — which is where Plex's token, Jellyfin's API key and Xtream's
+  password live. The device's log is readable by anything attached to the
+  phone. The log keeps the **host and the file name** now.
+
+- **The browser logged the URL the user typed.** A pasted
+  `https://user:password@host/` put the password in the log. The same
+  redaction applies.
+
 ### Fixed
+
+- **The video did not start on the car's display.**
+  A video the user started **on the phone** was handed off, but a video the
+  **car** asked for was offered to the car's display exactly **once** — at the
+  moment the row was tapped. The car's video endpoint appears up to two
+  minutes later, and the system only looks at the AirPlay route when the
+  picture is offered, so that single offer found no endpoint and the car's
+  screen stayed black. Every car-wanted play now carries the ladder of
+  re-offers, and the ladder **repeats** (the old one stopped after 45
+  seconds, long before the endpoint was there).
+
+  The ladder also caused the "laggy" start: it offered the picture at 1 s and
+  3 s — right on the start — and every offer rebuilds the player and drops
+  the buffer. The first gap is now long enough for the video to start, and
+  the gaps grow from there.
+
+- **A page opened on the car played on the phone, not on the car.**
+  The screen share is the only way a page reaches the car (CarPlay has no web
+  view of its own), and the share played through the player's own hand-off
+  path — which it never took. The share is now handed off to the car like any
+  other video. And because iOS always asks the **user** to start a share, the
+  phone now says that the car is waiting, with the button that starts it.
+
+- **The browser tab died and the app went back to the home screen.**
+  Two loops: a page whose web process died was reloaded **unconditionally**,
+  so the page that killed the process was loaded again, killed it again, and
+  the app was taken down with it — and the phone's browser tab had no handler
+  at all, so a dead page stayed dead. Now a page is reloaded **once**; a page
+  that dies twice says so and stops. The car's browser also no longer builds
+  its result list again for **every keystroke** — the list is built once and
+  filtered, so the pictures are not drawn again and again.
+
+- **The compass showed the wrong direction.**
+  The GPS **course** (the direction of travel — noise while the car is slow)
+  overwrote the compass on every GPS fix, and the rose turned *with* the
+  heading instead of against it: a car heading east has north on its **left**.
+  The compass now wins, the course is only the fallback for a device without
+  one, the heading is normalised, and the needle is **fixed** while the rose
+  turns under it (a needle inside the rose turns with it and always says
+  north).
+
+- **The compass was still wrong, and it was not smooth.**
+  Three separate faults, all measured on the phone (the device's own log:
+  *"magneticHeading 266.75 trueHeading 267.05 **accuracy 27.58**"*):
+
+  1. **The heading was out by tens of degrees and was shown anyway.**
+     CoreLocation reports the **error** of a heading in degrees; a phone
+     lying flat has no usable horizontal field to read a heading from, and
+     its error grows into the tens of degrees. A needle that follows such a
+     reading points the wrong way — which is worse than the GPS's course.
+     A reading the compass is out by more than twenty degrees is now refused,
+     the GPS's course takes over, and the panel says **GPS COURSE** instead
+     of pretending the compass knows.
+  2. **The smoothing counted readings, not seconds.** The magnetometer
+     delivers several times a second and the GPS once a second, so a filter
+     that closes a third of the gap per *reading* smooths one of them and
+     not the other. The filter now runs on a **clock**, so the rose moves by
+     how much *time* has passed — and a burst of readings that arrive
+     together moves it by as little as one that arrives alone. (Measured:
+     two readings a second apart were delivered 128 ms apart — the jolt the
+     user saw.)
+  3. **A red needle said "north" while the letters said something else.**
+     The needle is **fixed** (it points the way the car faces) but it was
+     painted like a compass needle — red for north — so it always pointed up
+     while the rose turned under it. It is the vehicle's direction marker
+     now, in the car's green; the rose's red **N** is the only north marker.
+  4. **The filter's clock could be dragged backwards.** The clock runs on the
+     moment a reading **arrived** — what the user sees is when the needle
+     moved, not when the field was measured — and it only ever moves
+     **forward**. A reading that arrives late (a buffered one whose own stamp
+     is older than the reading already applied) no longer moves the needle
+     and no longer drags the clock back, which would make the next reading
+     close a gap that never happened.
+
+  The rose's rotation is continuous as well, so it no longer spins 358° the
+  long way round every time the heading crosses north.
 
 - **The ad blocker broke the sign-in of the sites that use a captcha.**
   The truth, measured against the real SonyLIV page and against a real

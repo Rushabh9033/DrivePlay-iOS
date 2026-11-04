@@ -768,6 +768,120 @@ it is set in `project.yml`.
   `includeRelay=1` the answer holds a server with **no usable address at
   all**, and the account looks empty.
 
+## Gotchas from the eleventh pass (2026-11-04, the car's picture, the page and the compass)
+
+- **The CarPlay Simulator shows the *template* scene, not the app's own car
+  UI.** `ExternalDisplaySceneDelegate` → `InCarAutomotiveController` is a
+  plain `UIViewController` for a real second screen, and the **CarPlay
+  Simulator renders `CarPlaySceneDelegate`'s templates** — the app grid, the
+  tab bar, the lists. So the address bar of the car's browser is a
+  `CPSearchTemplate` pushed onto the stack, and the custom browser, its
+  toolbar and its address bar are a **different** code path that the simulator
+  never shows. Verify which scene a window shows with a window list
+  (`CGWindowListCopyWindowInfo`) and a capture of that window id, not by
+  reading the code.
+- **The re-offer ladder has to run for *every* car-wanted play.** The guard
+  `if isCarConnected && presentation != .hidden` skipped the ladder for
+  exactly the play the **car** asked for (the car plays with
+  `presentation: .hidden`) — so the picture was offered once, at the moment
+  the row was tapped, and the car's endpoint (up to two minutes later) never
+  saw it. The ladder also has to **repeat**: a fixed list of offers ends long
+  before the endpoint is there.
+- **The first gap of the ladder must be long enough for the video to start.**
+  An offer rebuilds the player and drops the buffer, so an offer that lands
+  on the start is the stutter the user feels as "laggy". The gaps grow
+  (2.5 s, 2.5 s, 4 s, 7 s, 12 s, 20 s, 30 s) instead of starting at 1 s.
+- **A page that reaches the car goes through the phone's screen share — and
+  the share has to be handed off too.** `playScreenShare` never called
+  `handOffToCar`, so even a working broadcast played on the phone. iOS always
+  asks the **user** to start a share (`RPSystemBroadcastPickerView`), so the
+  app has to put that button in front of them when the car asks for a page —
+  the car's screen is not a touch screen.
+- **A search template's list must not be built again for every keystroke.**
+  `searchTemplate(_:updatedSearchText:completionHandler:)` is called on
+  **every character**, and every row carries a picture at the car's scale —
+  so the rows are built **once** and filtered afterwards. The same rule as
+  the Home tab's cards: a picture that is drawn is a picture that is paid
+  for, and the car tears the scene down when the resource consumption
+  reaches a hundred per cent.
+- **A dead web process must not be reloaded in a loop.**
+  `webViewWebContentProcessDidTerminate` reloaded the page unconditionally:
+  the page that killed the process was loaded again, killed it again, and the
+  app was taken down with it (the watchdog kills an app that stops
+  answering — the symptom is a redirect to the home screen, with **no crash
+  report**). One reload, then the catalogue takes the screen back. The
+  phone's browser tab had no handler at all, so a dead page stayed dead.
+- **The compass rose turns *against* the heading, and the needle is fixed.**
+  A car heading east has north on its **left**, so the rose is rotated by
+  **−heading**; a rose that turns with the heading points the opposite way.
+  The needle points the way the car faces, so it sits **outside** the rose —
+  a needle inside the rose turns with it and always says north.
+- **The GPS course must not overwrite the compass.** `CLLocation.course` is
+  the direction of *travel*, not the direction the car faces, and while the
+  car is slow it is mostly the GPS's noise. The compass is the heading; the
+  course is the fallback for a device without one. The last writer wins, so
+  the noisy writer must not be the one that writes last.
+
+## Gotchas from the twelfth pass (2026-11-04, the compass again)
+
+- **A broken log capture reads as a missing callback.** `idevicesyslog` prints
+  *"Waiting for device with UDID … to become available…"* and exits when the
+  phone drops off the USB bus — and a capture that caught only **three** lines
+  was read as *"the heading callback never fires"*. It does fire: the same
+  capture held `locationManager:didUpdateHeading:` twice. **Check the line
+  count of a capture before believing its contents**, and use
+  `xcrun devicectl device process launch --console` when the phone is the
+  only source — it bridges the app's stdout and needs no log daemon.
+- **CoreLocation reports the heading's **error**, not its noise.**
+  `headingAccuracy` was **27.58** on a phone lying flat on a desk: there is
+  no usable horizontal field to read a heading from, so the error grows into
+  the tens of degrees. Two readings a second apart differed by **1.06°** —
+  the *noise* is small, the *error* is huge. A heading that is out by more
+  than twenty degrees is not a direction, and a needle that follows it points
+  the wrong way. The gate is on the accuracy, and the GPS's course takes
+  over; the screen says **GPS COURSE** so the user knows which one they are
+  looking at.
+- **A filter that counts readings is not a filter.** The magnetometer
+  delivers several times a second and the GPS once a second, so "close a
+  third of the gap per reading" smooths one source and not the other — and
+  CoreLocation delivers its readings in **bursts**: two readings measured a
+  second apart were handed over **128 ms** apart. The filter therefore runs
+  on a **clock** (`1 - exp(-dt / tau)`), so the needle moves by how much
+  *time* has passed and a burst moves it as little as one lonely reading.
+  The clock is the **arrival**, not the reading's own stamp: what the user
+  sees is when the needle moved, not when the field was measured — and a
+  buffered reading's stamp can be *older* than the last one applied, which
+  would stall the filter. The seam takes the arrival time for exactly this
+  reason — a test that cannot drive the clock cannot pin this down.
+- **A magnetic needle and a rotating card are two different instruments.**
+  The card turns and a **lubber line** stays put (a heading indicator), or
+  the needle points north and the *bezel* turns (a magnetic compass). The
+  app had the card turning **and** a red needle fixed at the top, so the
+  needle said "north" while the letters said something else — which is what
+  "the compass shows the wrong direction" meant. One marker, one colour
+  scheme: red is the card's **N**, green is the car's direction.
+
+## Gotchas from the fifteenth pass (2026-11-04, the security review)
+
+- **An `NSError`'s description carries the URL that failed — and the URL
+  carries the token.** `String(describing: itm.error)` puts Plex's
+  `X-Plex-Token`, Jellyfin's `api_key` and Xtream's password into the
+  device's log, which is readable by anything attached to the phone (Xcode's
+  console, `idevicesyslog`, a sysdiagnose upload). Log the **host and the
+  file name** instead (`CredentialRedactor.safeForLog`), and never the raw
+  URL a user typed: a pasted `https://user:password@host/` is a password in
+  the log.
+- **A token in a URL path is the only lock on a LAN-served stream, and 32
+  bits is not a lock.** The screen stream is served over the local network
+  and every path carries the token, so `String(UUID().uuidString.prefix(8))`
+  — 2³² guesses — was the whole of its privacy. 128 bits.
+- **The app and the broadcast extension share no secret.** They live in
+  different processes and share no container (an App Group would need another
+  Apple-granted capability), so the relay's announcement on the loopback
+  port **47311** cannot be authenticated: any app on the phone can announce
+  a stream of its own. Closing that needs an App Group or the user's
+  confirmation — **ask first**.
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

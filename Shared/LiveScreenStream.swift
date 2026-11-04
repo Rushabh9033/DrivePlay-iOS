@@ -288,7 +288,12 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
 /// must not be readable by whatever else is on the network.
 final class ScreenStreamServer {
 
-    let token = String(UUID().uuidString.prefix(8))
+    /// The token every path of the stream carries.
+    ///
+    /// It is the **only** thing that keeps the phone's screen off the rest of
+    /// the network, so it is 128 bits wide. Eight hex characters are 32 bits,
+    /// and 2³² guesses is a weekend's work for anyone on the same Wi-Fi.
+    let token = UUID().uuidString.lowercased()
 
     private let writer: LiveScreenWriter
     private let queue = DispatchQueue(label: "com.rushabh.cartvv.screenshare.server")

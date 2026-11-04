@@ -857,6 +857,45 @@ final class CarPlaySearchTests: XCTestCase {
         XCTAssertEqual(PlaybackManager.shared.currentChannel?.id, sky.id,
                        "the selected search result did not play its channel")
     }
+
+    /// AC141: the car's browser does not build its list again for every
+    /// keystroke.
+    ///
+    /// The search template hands the car a fresh list on **every keystroke**,
+    /// and every row carries a picture at the car's scale — so a list that is
+    /// built again for every character is what took the CarPlay scene down.
+    func test_AC141_the_cars_browser_does_not_build_its_list_again_for_every_keystroke() {
+        let browser = CarPlayBrowserSearch()
+
+        var first: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { first = $0 }
+        var second: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "y") { second = $0 }
+
+        let youtubeFirst = first.first { $0.text == "YouTube" }
+        let youtubeSecond = second.first { $0.text == "YouTube" }
+        XCTAssertNotNil(youtubeFirst, "the browser has no YouTube row")
+        XCTAssertTrue(youtubeFirst === youtubeSecond,
+                      "the row was built again, so its picture was drawn again")
+    }
+
+    /// AC142: the phone is told that the car is waiting for the page.
+    ///
+    /// CarPlay has no web view of its own, so a page the user opens on the car
+    /// runs on the phone and reaches the car through the phone's screen
+    /// share — and iOS always asks the **user** to start a share, so the
+    /// phone has to say that the car is waiting.
+    func test_AC142_the_phone_is_told_that_the_car_is_waiting_for_the_page() {
+        let share = ScreenShareService(relay: ScreenRelayListener(port: 47313))
+        defer { share.stopRelay() }
+
+        share.carRequestedPage("https://m.youtube.com")
+
+        XCTAssertEqual(share.pendingCarPage, "https://m.youtube.com",
+                       "the phone has to say that the car is waiting for the page")
+        XCTAssertTrue(share.isWaitingForBroadcast,
+                      "the relay has to be listening before the user picks the broadcast")
+    }
 }
 
 /// How the car's screen behaves under load.

@@ -128,14 +128,24 @@ final class AdBlockerTests: XCTestCase {
                       "www.sonyliv.com is not protected")
 
         // A captcha in a frame of the page: the CSS rule must not touch it.
+        //
+        // The page here is an **ordinary** site, so the only thing that can
+        // keep the rule off the badge is `load-type` — the badge is a
+        // third-party frame.
         let badge = URL(string: "https://www.google.com/recaptcha/api2/bframe?k=abc")!
-        let page = URL(string: "https://www.sonyliv.com/account/signin")!
+        let page = URL(string: "https://example.com/watch")!
         XCTAssertFalse(Self.matches(cssRules[0], url: badge, page: page),
                        "the CSS rule reaches into a frame")
 
         // The page itself: the rule still does its job.
         XCTAssertTrue(Self.matches(cssRules[0], url: page, page: page),
                       "the CSS rule does not hide the ad boxes of the page")
+
+        // And on a **protected** site it does not even do that: the sign-in
+        // page of SonyLIV is left completely alone.
+        let signIn = URL(string: "https://www.sonyliv.com/account/signin")!
+        XCTAssertFalse(Self.matches(cssRules[0], url: signIn, page: signIn),
+                       "the CSS rule touches a protected site")
     }
 
     /// AC123: the user can let a site through, and that site is then left

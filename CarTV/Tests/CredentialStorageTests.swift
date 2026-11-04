@@ -182,4 +182,44 @@ final class CredentialStorageTests: XCTestCase {
         XCTAssertFalse(onDisk.streamURL.absoluteString.contains("tok-123"))
         XCTAssertFalse(try XCTUnwrap(onDisk.logoURL).absoluteString.contains("tok-123"))
     }
+
+    /// AC150: the screen stream's token is wide enough to be a lock.
+    ///
+    /// The stream is the phone's screen, and it is served over the local
+    /// network — so the token in its path is the only thing that keeps it
+    /// private. Eight hex characters are 32 bits, and 2³² guesses is a
+    /// weekend's work for anyone on the same Wi-Fi.
+    func test_AC150_the_screen_streams_token_is_wide_enough_to_be_a_lock() throws {
+        let writer = try XCTUnwrap(LiveScreenWriter.make(), "the encoder could not start")
+        let server = ScreenStreamServer(writer: writer)
+
+        XCTAssertGreaterThanOrEqual(server.token.count, 32,
+                                    "the token is too narrow to be a lock")
+        XCTAssertFalse(server.token.contains("-"), "the token must be one unbroken string")
+
+        let other = ScreenStreamServer(writer: writer)
+        XCTAssertNotEqual(server.token, other.token, "two servers share a token")
+    }
+
+    /// AC151: a URL that carries a password is not written to the log as it is.
+    ///
+    /// The device's log is readable by anything attached to the phone — an
+    /// Xcode console, `idevicesyslog`, a sysdiagnose — and a stream URL
+    /// carries the account's token. The log keeps the host and the name of
+    /// the file, which is what says *which* stream failed, and nothing else.
+    func test_AC151_a_url_that_carries_a_password_is_not_logged_as_it_is() throws {
+        let url = try XCTUnwrap(URL(string:
+            "http://user:pass-secret@example.com:8080/live/user/pass-secret/12345.ts?api_key=token-secret"))
+
+        let safe = CredentialRedactor.safeForLog(url)
+        XCTAssertFalse(safe.contains("pass-secret"), "the password reached the log: \(safe)")
+        XCTAssertFalse(safe.contains("token-secret"), "the token reached the log: \(safe)")
+        XCTAssertFalse(safe.contains("user"), "the user name reached the log: \(safe)")
+        XCTAssertTrue(safe.contains("example.com"), "the log lost the host: \(safe)")
+        XCTAssertTrue(safe.contains("12345.ts"), "the log lost the file name: \(safe)")
+
+        // A string that is not a URL at all is not written out either — it
+        // may still be a password the user pasted.
+        XCTAssertEqual(CredentialRedactor.safeForLog("pass-secret"), "<not a URL>")
+    }
 }

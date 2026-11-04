@@ -125,6 +125,10 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     let searchCancelBtn = UIButton(type: .system)
     let searchResultsScrollView = UIScrollView()
     let searchResultsStack = UIStackView()
+
+    /// True while the browser has reloaded the page once after its web process
+    /// died — a second death is the page's own fault and is not reloaded again.
+    var hasReloadedAfterCrash = false
     
     // MARK: - Lifecycle
     

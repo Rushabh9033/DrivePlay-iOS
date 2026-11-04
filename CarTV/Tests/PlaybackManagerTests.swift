@@ -237,4 +237,52 @@ final class PlaybackManagerTests: XCTestCase {
         XCTAssertTrue(manager.playOnCarDisplay())
         XCTAssertEqual(manager.offerCount, 1)
     }
+
+    /// AC139: a video the **car** asked for is offered to the car's display
+    /// again and again.
+    ///
+    /// The car's video endpoint appears a moment after the scene connects and
+    /// the route is only looked at when the picture is offered — so a picture
+    /// offered once, at the moment the row is tapped, finds no endpoint and
+    /// the car's screen stays black. The play used to carry **no** ladder at
+    /// all when the car asked for it.
+    func test_AC139_a_video_the_car_asked_for_is_offered_to_the_car_again() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC139",
+                              streamURL: URL(string: "https://example.com/ac139.m3u8")!)
+
+        manager.isCarConnected = true
+        manager.play(channel: channel, presentation: .hidden)
+
+        XCTAssertTrue(manager.isHandingOffToCar,
+                      "the car's own play was not handed off at all, so the car's screen stays black")
+
+        // The first offer comes after the video had its chance to start.
+        let settled = expectation(description: "the ladder had its chance")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) { settled.fulfill() }
+        wait(for: [settled], timeout: 8)
+
+        XCTAssertGreaterThan(manager.offerCount, 0,
+                             "the picture was never offered to the car again")
+    }
+
+    /// AC140: the phone's screen share reaches the car's display.
+    ///
+    /// The share is the only way a **page** reaches the car (CarPlay has no
+    /// web view of its own), and the share plays through the very same
+    /// player — so it has to be handed off to the car like any other video.
+    func test_AC140_the_screen_share_is_offered_to_the_car() {
+        let manager = PlaybackManager()
+        let url = URL(string: "http://127.0.0.1:47311/abc/live.m3u8")!
+
+        manager.isCarConnected = true
+        manager.playScreenShare(url: url, title: "iPhone screen")
+
+        XCTAssertEqual(manager.player?.allowsExternalPlayback, true,
+                       "the share cannot leave the phone without the route open")
+        XCTAssertTrue(manager.isHandingOffToCar,
+                      "the share played on the phone and the car's display stayed black")
+        XCTAssertEqual(manager.presentationMode, .hidden,
+                       "the phone must not show the video it is capturing")
+    }
 }

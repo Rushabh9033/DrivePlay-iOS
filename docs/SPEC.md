@@ -284,6 +284,23 @@ arrives as a string *and* as a list. A refused account is now refused by name
 | 132 | A refused account is not reported as an account without a server | `PlexTests` |
 | 133 | A site name is a host name — a glob character is never accepted as an exemption | `AdBlockerTests` |
 | 134 | **The whole rule list compiles** — WebKit is asked, not simulated | `AdBlockerTests` |
+| 135 | The compass rose turns **against** the heading, and the heading is normalised into 0..<360 | `SatelliteHUDTests` |
+| 136 | The compass wins over the GPS course — the course of a slow car is noise and must not overwrite it | `SatelliteHUDTests` |
+| 137 | The GPS course is the fallback when the device has no compass, and an unknown course is never used | `SatelliteHUDTests` |
+| 138 | The cardinal direction of a negative heading is the right one | `SatelliteHUDTests` |
+| 139 | A video the **car** asked for is offered to the car's display again and again — the car's endpoint arrives late | `PlaybackManagerTests` |
+| 140 | The phone's screen share is handed off to the car — the share is the only way a page reaches the car | `PlaybackManagerTests` |
+| 141 | The car's browser does not build its result list again for every keystroke | `CarPlayTemplateTests` |
+| 142 | The phone is told that the car is waiting for the page — iOS always asks the user to start a share | `CarPlayTemplateTests` |
+| 143 | The heading is **smoothed** — the display moves toward the new heading instead of jumping to it | `SatelliteHUDTests` |
+| 144 | The rose does not spin when the heading crosses north — the rotation is continuous | `SatelliteHUDTests` |
+| 145 | A compass that does not know (−1) is refused, and it does not kill the course fallback | `SatelliteHUDTests` |
+| 146 | The GPS course is only used while the car is **moving** | `SatelliteHUDTests` |
+| 147 | A compass that is **not sure of itself** (an error of tens of degrees) does not steer the needle — the course takes over | `SatelliteHUDTests` |
+| 148 | The heading is smoothed by **time** — the same readings move the needle less when they arrive in a burst, and a reading that arrives **late** neither moves the needle nor drags the filter's clock back | `SatelliteHUDTests` |
+| 149 | The compass **says whether it is sure** of the heading | `SatelliteHUDTests` |
+| 150 | The screen stream's **token is 128 bits wide** — it is the only thing that keeps the phone's screen off the rest of the network | `CredentialStorageTests` |
+| 151 | A URL that carries a password is **not written to the log** as it is — the log keeps the host and the file name | `CredentialStorageTests` |
 
 ## Verification
 

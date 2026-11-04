@@ -91,6 +91,7 @@
 		BCCAEED6A5F788AA719D489A /* CarTV.storekit in Resources */ = {isa = PBXBuildFile; fileRef = B04D663F78327D6817C544B8 /* CarTV.storekit */; };
 		C05D60950F3CFD0D2B8B3372 /* PlaybackManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A10109C3458DADC040B263 /* PlaybackManager.swift */; };
 		CAAD18FA599CF8B8E75468CF /* CarPlayArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6808BDD3276867769367E1 /* CarPlayArtwork.swift */; };
+		CE616D22FAFC4FEAA07FACD2 /* SatelliteHUDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB9B0137AC77B6CC7D43240 /* SatelliteHUDTests.swift */; };
 		D11066412A85061DF17D1E4E /* SourceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575210B369C0B9576CE3DEC7 /* SourceDetailView.swift */; };
 		D3A3A2EA29A43A576C45E134 /* LocalMediaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21681C21A2F7D62896BE5AEB /* LocalMediaService.swift */; };
 		D87018AEC96AFBFA19F57A30 /* DLNADIDLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9ED5AB8AA297D1B6D2A0C4 /* DLNADIDLParser.swift */; };
@@ -177,6 +178,7 @@
 		39AA96E910289A373C569462 /* AdBlockerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdBlockerEngine.swift; sourceTree = "<group>"; };
 		3B184E80B43BBE845472EE70 /* StoreKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitTests.swift; sourceTree = "<group>"; };
 		3CFAE559DEF637178EC331DC /* BrowserCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserCatalog.swift; sourceTree = "<group>"; };
+		3FB9B0137AC77B6CC7D43240 /* SatelliteHUDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SatelliteHUDTests.swift; sourceTree = "<group>"; };
 		42CAABC03CEF597C95DE9315 /* VideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPlayerView.swift; sourceTree = "<group>"; };
 		463785B668981A62F36DBF50 /* MiniPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerTests.swift; sourceTree = "<group>"; };
 		49A10109C3458DADC040B263 /* PlaybackManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackManager.swift; sourceTree = "<group>"; };
@@ -433,6 +435,7 @@
 				0D17DA4A4701E1687D3FE8B3 /* PlexTests.swift */,
 				671FFCFBF4B52CB13B4E0C76 /* RepositoryFixture.swift */,
 				04BAE76C77B883BB1AE62D5D /* ReviewRegressionTests.swift */,
+				3FB9B0137AC77B6CC7D43240 /* SatelliteHUDTests.swift */,
 				18AE58A6F43A6DC18FF29300 /* ScreenCaptureLifecycleTests.swift */,
 				B906211FA7DF1F6F8BC05D78 /* ScreenShareTests.swift */,
 				F0371C2218380EC06289AF04 /* SourceParserTests.swift */,
@@ -741,6 +744,7 @@
 				5A4D8A0344E0D719556FE279 /* PlexTests.swift in Sources */,
 				7FE963E7A4DAEC742ED94A12 /* RepositoryFixture.swift in Sources */,
 				FA28399BD425D5BA4470B2C1 /* ReviewRegressionTests.swift in Sources */,
+				CE616D22FAFC4FEAA07FACD2 /* SatelliteHUDTests.swift in Sources */,
 				0CBC4FA1E45C229ABE016601 /* ScreenCaptureLifecycleTests.swift in Sources */,
 				A934654E0D0930631C75504C /* ScreenShareTests.swift in Sources */,
 				2AFEAF2CE0566DC103BC6444 /* SourceParserTests.swift in Sources */,

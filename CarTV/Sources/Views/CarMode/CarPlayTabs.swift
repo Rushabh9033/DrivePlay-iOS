@@ -645,7 +645,11 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
     /// What a picked row does — the tests replace it, so nothing is loaded.
     var openAddress: (String) -> Void = { address in
         BrowserTabManager.shared.loadURLInActiveTab(address)
-        ScreenShareService.shared.startForTheCar()
+        // The car has no web view of its own: the page runs on the phone and
+        // reaches the car through the phone's screen share. iOS always asks
+        // the **user** to start a share, so the phone has to say that the car
+        // is waiting.
+        ScreenShareService.shared.carRequestedPage(address)
     }
 
     /// Called after a result was picked — the car goes back to the list, the
@@ -660,6 +664,25 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
     /// result was.
     private var results: [ObjectIdentifier: String] = [:]
 
+    /// The rows of the app's own sites — built **once**.
+    ///
+    /// The search template hands the car a fresh list on **every keystroke**,
+    /// and every row carries a picture at the car's scale, so building them
+    /// again for every character is what took the CarPlay scene down. The rows
+    /// are built once and only filtered afterwards.
+    private static let siteRows: [Row] = {
+        var rows: [Row] = []
+        for group in BrowserCatalog.groups {
+            for site in group.items {
+                rows.append(Row(item: CPListItem(text: site.name,
+                                                  detailText: site.urlString,
+                                                  image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize)),
+                                 address: site.urlString))
+            }
+        }
+        return rows
+    }()
+
     /// The rows the browser offers: the page the phone shows now, then the
     /// app's own sites.
     static func rows(currentURL: String) -> [Row] {
@@ -670,14 +693,7 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
                                               image: UIImage(systemName: "safari.fill")),
                              address: currentURL))
         }
-        for group in BrowserCatalog.groups {
-            for site in group.items {
-                rows.append(Row(item: CPListItem(text: site.name,
-                                                  detailText: site.urlString,
-                                                  image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize)),
-                                 address: site.urlString))
-            }
-        }
+        rows.append(contentsOf: siteRows)
         return rows
     }
 

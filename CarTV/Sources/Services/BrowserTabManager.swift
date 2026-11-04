@@ -17,6 +17,8 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
     private var titleObservation: NSKeyValueObservation?
     private var urlObservation: NSKeyValueObservation?
     private var loadingObservation: NSKeyValueObservation?
+    /// True while the tab has reloaded the page once after its web process died.
+    private var hasReloadedAfterCrash = false
     
     public init(title: String = "Start Page", urlString: String = "") {
         self.id = UUID()
@@ -53,7 +55,10 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
             return
         }
 
-        print("[BrowserTabItem] Loading destination: \(destination)")
+        // The URL is not written out as it is: a user can paste one with a
+        // password in it, and the device's log is readable by anything
+        // attached to the phone.
+        print("[BrowserTabItem] Loading destination: \(CredentialRedactor.safeForLog(destination))")
         self.urlString = destination
         self.title = "Loading..."
         self.isLoading = true
@@ -181,6 +186,7 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
     
     nonisolated public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
+            self.hasReloadedAfterCrash = false
             self.isLoading = false
             self.canGoBack = webView.canGoBack || !self.urlString.isEmpty
             self.canGoForward = webView.canGoForward
@@ -212,6 +218,32 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
             self.canGoBack = webView.canGoBack || !self.urlString.isEmpty
             self.canGoForward = webView.canGoForward
             BrowserTabManager.shared.objectWillChange.send()
+        }
+    }
+
+    /// The page's web process died — WebKit killed it, usually because the
+    /// page used too much memory.
+    ///
+    /// The tab used to be left with a dead page and nothing else: the process
+    /// is gone, so the view shows nothing and never recovers. A reload is
+    /// allowed **once** — a reload in a loop is worse than a dead tab, because
+    /// the page that killed the process is loaded again, kills it again, and
+    /// the app is taken down with it (the watchdog kills an app that stops
+    /// answering). A page that dies twice is the page's own fault, so the
+    /// tab says so and stops.
+    nonisolated public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        NSLog("DRIVEPLAY the page's web process died")
+        Task { @MainActor in
+            if self.hasReloadedAfterCrash {
+                self.hasReloadedAfterCrash = false
+                self.isLoading = false
+                self.title = "The page crashed"
+                self.urlString = ""
+                BrowserTabManager.shared.objectWillChange.send()
+                return
+            }
+            self.hasReloadedAfterCrash = true
+            self.reload()
         }
     }
     
@@ -253,7 +285,7 @@ public final class BrowserTabManager: ObservableObject {
     }
     
     public func loadURLInActiveTab(_ urlString: String) {
-        print("[BrowserTabManager] loadURLInActiveTab called with: \(urlString)")
+        print("[BrowserTabManager] loadURLInActiveTab called with: \(CredentialRedactor.safeForLog(urlString))")
         if tabs.isEmpty {
             createNewTab(urlString: urlString, dismissTabGrid: false)
         } else {
