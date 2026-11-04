@@ -94,6 +94,15 @@ the main thread, four times a second, which is what made the phone stutter
 (AC109). A video that has just started is not offered to the car a second
 time, because the item was attached with the route already open (AC110).
 
+The **tenth pass** (2026-11-04) is the app's **appearance**. DrivePlay is a
+dark-first app — the cards, the player and the whole in-car screen are dark —
+but the phone's own appearance was still in charge of the phone's side, so a
+phone set to light showed a light app next to a dark car. The app now says so
+once, for the whole process: `UIUserInterfaceStyle: Dark` in the app's own
+Info.plist (AC111). It is the one key that covers every tab, every sheet and
+every window, and it leaves the car exactly as it was — the car paints its own
+chrome, and the app cannot tell a car what colour to be.
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -208,6 +217,7 @@ time, because the item was attached with the route already open (AC110).
 | 108 | The picture the user took back does not jump back to the car | `PlaybackManagerTests` |
 | 109 | The now-playing artwork is drawn once per channel, not four times a second | `PlaybackManagerTests` |
 | 110 | A video that has just started is not offered to the car twice | `PlaybackManagerTests` |
+| 111 | The app is **dark** whatever the phone's own appearance says | `AppearanceTests` |
 
 ## Verification
 

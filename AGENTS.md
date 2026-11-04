@@ -689,6 +689,12 @@ it is set in `project.yml`.
 - **A missing file is not proof that a feature is absent.** Two wrong conclusions came from
   inferring "not installed" from a path that no longer exists in Xcode 27. Check what the tool
   actually uses before concluding a runtime is missing.
+- **The app's appearance is the app's own business.** `UIUserInterfaceStyle: Dark` sits in
+  `project.yml` (the source of truth for `Info.plist`), so the phone's light/dark setting does
+  not turn DrivePlay light — the app is dark on every tab, every sheet and every window. The
+  **car** is not affected and cannot be: the car paints its own chrome, and the app only hands
+  it titles, icons and artwork. Read the key from the *running* app in a test
+  (`Bundle.main`), never from a copy in the repository.
 - **A test that fails on the phone may be the phone.** A phone that **locks itself** takes the
   app under test down with it: the app is backgrounded, the in-flight work stops, and XCTest
   reports *"Restarting after unexpected exit, crash, or test timeout"* and blames whichever test

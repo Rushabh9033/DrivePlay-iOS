@@ -609,6 +609,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The app is dark now, whatever the phone says.** DrivePlay is a dark-first
+  app — the cards, the player and the whole in-car screen are dark — but a
+  phone set to light still showed a light app sitting next to a dark car. The
+  app now asks for the dark appearance once, for the whole process, so every
+  tab, every sheet and every window is dark. The car is unchanged: the car
+  paints its own chrome, and the app cannot tell a car what colour to be.
+
 - **The video build asks for both CarPlay entitlements.** Apple's profile for
   the app id carries `carplay-audio` and `carplay-video`, and Apple's own
   guidance is to include both when the content suits both: the app then

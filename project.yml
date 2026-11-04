@@ -40,6 +40,11 @@ targets:
         CarPlayCategory: $(CARPLAY_CATEGORY)
         LSRequiresIPhoneOS: true
         UIRequiresFullScreen: true
+        # DrivePlay is a dark-first app: the cards, the player and the whole
+        # in-car screen are dark. The phone's own appearance must not turn the
+        # app light — this is the one key that says so for the whole process,
+        # every tab, every sheet and every window.
+        UIUserInterfaceStyle: Dark
         NSAppTransportSecurity:
           # Plain HTTP is only allowed on the local network (NSAllowsLocalNetworking);
           # the in-app browser tab may load any site it is asked to.
