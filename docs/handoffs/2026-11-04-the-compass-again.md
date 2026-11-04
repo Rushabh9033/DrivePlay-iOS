@@ -198,11 +198,16 @@ Three findings are **written down instead**, with the reason — they are in
   Right now `xcrun devicectl list devices` shows *Rushabh's Iphone* as
   **unavailable** — it is not on the bus at all, and `devicectl device info
   lockState` fails with *"The tunnel connection failed"*. The device suite for
-  this round is **queued**: a background job polls every 15 s and writes
-  `build/device_test_compass.log` the moment the phone answers, so it runs on
-  its own. The compile check (`TEST BUILD SUCCEEDED`) passed and the compass
-  code was executed on its own (see the table above). **Replug the cable** and
-  the suite will run by itself.
+  this round is **queued**: the first waiter's 100-minute window expired with
+  the phone still gone, so a **24-hour** waiter is running now — it polls every
+  15 s and writes `build/device_test_compass.log` the moment the phone
+  answers, so it runs on its own. It also **waits out a locked phone**: a
+  locked screen cannot launch the test bundle (*"Xcode cannot launch
+  CarTVTests … because the device is locked"*), so the run is retried every
+  30 s, eight times, instead of reporting a failure the user has to fix by
+  hand. The compile check (`TEST BUILD SUCCEEDED`) passed and the compass code
+  was executed on its own (see the table above). **Replug the cable** and the
+  suite will run by itself.
 - **The round is committed** as `53bfdbe` ("The compass that was still wrong,
   and the locks that were too small") on `main`, **locally only** — this
   repository has **no remote**, so nothing was pushed.
