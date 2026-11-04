@@ -194,14 +194,22 @@ Three findings are **written down instead**, with the reason — they are in
 
 ## Still open
 
-- **The phone dropped off the USB bus** while this round was being finished
-  (`xcrun devicectl list devices` → *available (paired)* but not *connected*,
-  `xcrun devicectl device info lockState` → *"The tunnel connection failed"*).
-  The device suite for this round is queued to run the moment it comes back
-  (a background job polls every 15 s and writes `build/device_test_compass.log`);
-  the compile check (`TEST BUILD SUCCEEDED`) passed, and the compass code was
-  executed on its own (see the table above). **Replug the cable** and the
-  suite will run on its own.
+- **The phone dropped off the USB bus** while this round was being finished.
+  Right now `xcrun devicectl list devices` shows *Rushabh's Iphone* as
+  **unavailable** — it is not on the bus at all, and `devicectl device info
+  lockState` fails with *"The tunnel connection failed"*. The device suite for
+  this round is **queued**: a background job polls every 15 s and writes
+  `build/device_test_compass.log` the moment the phone answers, so it runs on
+  its own. The compile check (`TEST BUILD SUCCEEDED`) passed and the compass
+  code was executed on its own (see the table above). **Replug the cable** and
+  the suite will run by itself.
+- **The round is committed** as `53bfdbe` ("The compass that was still wrong,
+  and the locks that were too small") on `main`, **locally only** — this
+  repository has **no remote**, so nothing was pushed.
+- `AGENTS.md`'s *Build & test* section now carries the user's own rule — the
+  **physical iPhone 13 only**, the iPhone 18 Pro simulator never booted,
+  `generic/platform=iOS` for a compile check — so the next session cannot
+  repeat the mistake.
 - **AC32 fails on the phone with a SIGKILL** — pre-existing, reproducible on
   its own, and it failed on 3 November before any of this round's code
   existed. There is **no crash report**; the device's own log shows a

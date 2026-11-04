@@ -4,10 +4,18 @@ Project-specific rules for this repo. The global `~/.claude/CLAUDE.md` still app
 
 ## Build & test
 
+**The user's rule: the physical iPhone 13 only.** The iPhone 18 Pro
+**Simulator is not to be booted, installed to or installed from** — the
+CarPlay video surface, the broadcast and the car's own screens can only be
+exercised on the device anyway (Xcode 27's CarPlay Simulator hosts physical
+devices only), and a simulator run says nothing about the phone.
+
+A **compile check** (no simulator, no device, nothing booted):
+
 ```bash
-xcodebuild -project CarTV.xcodeproj -scheme CarTV -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' \
-  CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES test
+xcodebuild -project CarTV.xcodeproj -scheme CarTV \
+  -destination 'generic/platform=iOS' -configuration Debug \
+  CARPLAY_CATEGORY=video build-for-testing
 ```
 
 **On the phone** (the CarPlay video surface and the broadcast can only be
@@ -17,10 +25,16 @@ exercised there, and Xcode 27's CarPlay Simulator hosts physical devices only):
 scripts/device_test.sh          # waits for the phone, then runs the suite on it
 ```
 
-**The Simulator build has to be signed** (ad-hoc is enough). An unsigned app has no
-`application-identifier`, so the Keychain refuses every write with `-34018`
-(`errSecMissingEntitlement`) — the credentials of a source cannot be stored at all.
-`CODE_SIGNING_ALLOWED=NO` still builds and installs, but the Keychain is dead in that build.
+The phone is `00008110-001C60423CB8401E` ("Rushabh's Iphone"). It drops off
+the USB bus when the cable is disturbed — `xcrun devicectl list devices` then
+shows it as *unavailable* or *available (paired)*, and
+`devicectl device info lockState` fails with *"The tunnel connection failed"*.
+A suite run against a destination the phone cannot reach fails with
+*"Unable to find a destination matching the provided destination specifier"* —
+that is the **cable**, not the code.
+
+**Other people's devices are not to be used** either ("SG MAC's iPhone",
+"Krushi Mac's iPad").
 
 `CarTV/Tests` is a real XCTest target (`CarTVTests`), wired into the `CarTV` scheme.
 `@testable import CarTV` needs `ENABLE_TESTABILITY: YES` in the app target's **Debug** config —
@@ -201,6 +215,12 @@ it is set in `project.yml`.
   is what asks the portal for a profile, and that is what fails with "No
   Accounts". So the fix for a missing entitlement is a **downloaded** profile,
   not a signed-in account.
+- **An unsigned app has no `application-identifier`, so the Keychain refuses
+  every write with `-34018`** (`errSecMissingEntitlement`) — the credentials of
+  a source cannot be stored at all. `CODE_SIGNING_ALLOWED=NO` still builds and
+  installs, but the Keychain is dead in that build. (This is why the ad-hoc
+  simulator build needed `CODE_SIGN_IDENTITY="-"`: it is the only way an
+  unsigned-looking build still gets an `application-identifier`.)
 - **The app's profile does not cover the broadcast extension.** The extension's
   bundle id is `com.rushabh.cartvv.ScreenRelay` and the profile's app id is
   `com.rushabh.cartvv` — Xcode insists on an **exact** match (*"has app ID …,
