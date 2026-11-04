@@ -422,18 +422,43 @@ public struct InAppBrowserView: View {
                         Image(systemName: "shield.checkered")
                             .font(.largeTitle)
                             .foregroundColor(.green)
-                        
+
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Ad Blocker Active")
+                            Text(adBlocker.isEnabled ? "Ad Blocker Active" : "Ad Blocker Off")
                                 .font(.headline)
-                            Text("Your browsing is fast, clean, and protected.")
+                            Text(adBlocker.isEnabled
+                                 ? "Your browsing is fast, clean, and protected."
+                                 : "Ads and trackers are not being blocked.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     }
                     .padding(.vertical, 4)
                 }
-                
+
+                Section("Protection") {
+                    Toggle("Block ads and trackers", isOn: Binding(
+                        get: { adBlocker.isEnabled },
+                        set: { newValue in
+                            adBlocker.setEnabled(newValue)
+                        }
+                    ))
+                }
+
+                // A site that needs a captcha to log in has to be let
+                // through — that is the one thing the blocker cannot decide
+                // for the user.
+                if let site = currentSite {
+                    Section("This Site") {
+                        Toggle("Block ads on \(site)", isOn: Binding(
+                            get: { !adBlocker.isExempt(site) },
+                            set: { block in
+                                adBlocker.setExempt(!block, for: site)
+                            }
+                        ))
+                    }
+                }
+
                 Section("Protection Status") {
                     Label("Annoying Ads Blocked", systemImage: "checkmark.shield.fill")
                     Label("Popups & Overlays Blocked", systemImage: "checkmark.shield.fill")
@@ -452,7 +477,14 @@ public struct InAppBrowserView: View {
                 }
             }
         }
-        .presentationDetents([.fraction(0.38)])
+        .presentationDetents([.fraction(0.5)])
+    }
+
+    /// The site the active tab is on — the key a site's exemption is
+    /// remembered by.
+    private var currentSite: String? {
+        guard let url = tabManager.activeTab?.webView.url else { return nil }
+        return AdBlockerEngine.siteKey(for: url)
     }
 }
 

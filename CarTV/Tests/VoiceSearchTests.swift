@@ -71,6 +71,30 @@ final class VoiceSearchTests: XCTestCase {
                        "the player did not get its audio session back")
     }
 
+    /// AC117: the transcript arrives on the main actor.
+    ///
+    /// The speech framework calls back on **its own queue**. Everything the
+    /// app does with the transcript belongs to the main actor — the published
+    /// text, the sheet that closes, the player that starts — and publishing
+    /// from that queue is a crash: *"Publishing changes from background
+    /// threads are not allowed"*.
+    func test_AC117_the_transcript_arrives_on_the_main_actor() async {
+        let manager = VoiceSearchManager()
+        let arrived = expectation(description: "the transcript arrived")
+        var onMainThread = false
+        var published = ""
+
+        manager.handleTranscript("news channel", isFinal: false, error: nil) { _ in
+            onMainThread = Thread.isMainThread
+            arrived.fulfill()
+        }
+
+        await fulfillment(of: [arrived], timeout: 2)
+        published = manager.recognizedText
+        XCTAssertTrue(onMainThread, "the app's state is published from the main thread")
+        XCTAssertEqual(published, "news channel", "the transcript is the app's own text")
+    }
+
     /// Opens the microphone the plain way — no app code at all.
     ///
     /// When even this fails, the device's microphone is taken by something

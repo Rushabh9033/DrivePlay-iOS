@@ -88,6 +88,14 @@ public final class PlaylistStore: ObservableObject {
         }
         return []
     }
+
+    /// The channels of the group the given channel belongs to.
+    ///
+    /// This is the list the player's "next" walks: the channel's **own**
+    /// group, in the order the playlist holds it.
+    public func channels(inGroupOf channel: Channel) -> [Channel] {
+        channels(for: channel.sourceId).filter { $0.groupTitle == channel.groupTitle }
+    }
     
     public var favoriteChannels: [Channel] {
         channels.filter { $0.isFavorite }

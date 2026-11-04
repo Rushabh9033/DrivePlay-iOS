@@ -7,6 +7,72 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The ad blocker broke the sign-in of the sites that use a captcha.** The
+  truth, measured against the real SonyLIV page: **no rule ever matched the
+  reCAPTCHA addresses** — the captcha's script and its frames were allowed
+  through all along. The page broke for four other reasons, and all four
+  are fixed:
+
+  1. a rule matched the **whole URL**, so a page that merely *mentioned* a
+     blocked host in its query string had its own request stopped. Google's
+     own collector carries `&scrsrc=www.googletagmanager.com` in its query,
+     so the page's own analytics died with it. The rules now match the
+     **host** of a request and nothing else;
+  2. the rule that hides the ad boxes ran on **every page and every frame**,
+     so it could hide a captcha badge — and a captcha badge lives in a
+     third-party frame. It now runs on the page alone, and it excepts the
+     captcha and identity providers;
+  3. the blocker could not be switched off: the "Ad Shield" sheet was a
+     read-only notice. It is a real control now, with a **per-site switch** —
+     a site that needs a captcha to log in can be let through while the rest
+     of the web stays blocked;
+  4. the **tag manager** was blocked, and a site's *own* setup travels
+     through it — SonyLIV's sign-in page took its login-and-tray setup from
+     there. It is not blocked any more; the ad hosts it fires at (DoubleClick,
+     Google Ads, Google Analytics) are blocked on their own, so the ads stay
+     blocked without the page breaking.
+
+  The compiled rules are also stored under a new name: WebKit keeps the
+  compiled list, and the old one was found and used, so the new rules were
+  never even compiled.
+
+  The rules apply to the **next** load, and they are compiled in the
+  background — so the pages are loaded again **after** the compile. Before,
+  the page was loaded with the *old* rules and the switch looked like it had
+  done nothing.
+
+- **"No Plex media server found on this account" — whatever the real problem
+  was.** The one message was used for four different failures. Now:
+
+  - the **relay address** of a server is asked for (`includeRelay=1`). Without
+    it a phone that is not on the server's own network saw a server with **no
+    usable address at all**, and the account looked empty;
+  - **one odd device cannot empty the whole list** any more — every field of
+    a device was required, so a single device that left one out made the
+    whole answer unreadable;
+  - `provides` reads as a **string and as a list**, because plex.tv answers
+    both ways;
+  - the **HTTP status is read**: an account that was refused (401) is now
+    reported as *"plex.tv refused the account — sign in again"*, not as an
+    account without a server;
+  - the account's **own phone is not taken for the server** — a device that
+    says it is a player is never the media server.
+
+- **The voice search crashed the app the moment it heard something.** The
+  microphone worked and the app died: the speech framework calls back on
+  **its own queue**, and the app published the transcript from that queue —
+  which is *"Publishing changes from background threads are not allowed"* — and
+  closed the search sheet and started the player from there too. The
+  transcript now crosses to the main actor before anything touches the app's
+  state.
+
+- **A portrait video was drawn as a landscape one — black bars on both
+  sides.** Every surface asked the player to *fit* the picture into the
+  frame, so a phone-shot video stood in the middle of the car's screen with a
+  black bar on each side. A **portrait** video now fills the frame; a
+  **landscape** one keeps its edges, because a channel's logo at the edge of
+  the picture must not be cropped away.
+
 - **A phone that locked itself took the app down in the middle of a test
   run.** A locked screen backgrounds the app, so the stream work stops and
   the test times out — and the failure was reported against whichever test
@@ -487,6 +553,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   instead.
 
 ### Added
+
+- **A minimised player — the bar under the content, above the tab bar.** A
+  video that is playing can now be put away: the picture leaves the phone's
+  screen and a bar takes its place, YouTube's way. The bar carries the
+  channel's picture and its name, and it plays and pauses the video, skips to
+  the **next channel of the group the current one belongs to**, and closes the
+  video with ✕. It sits **above** the tab bar and never covers it — the
+  tab bar's height is measured from the live window, so it is right on every
+  phone.
+
+- **A swipe down puts the player away.** YouTube's gesture works in the app
+  too: a swipe down on the docked player — or on the full-screen one — leaves
+  the bar behind. Only a swipe **down**: a drag to the side is not a
+  dismissal.
 
 - **A video started on the phone goes to the car's display by itself.** When a
   car is connected, a video the user starts on the phone is handed over to the

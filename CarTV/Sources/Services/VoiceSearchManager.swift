@@ -136,12 +136,35 @@ public final class VoiceSearchManager: ObservableObject {
         isRecording = true
         
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            self?.handleTranscript(result?.bestTranscription.formattedString,
+                                   isFinal: result?.isFinal ?? false,
+                                   error: error,
+                                   onResult: onResult)
+        }
+    }
+
+    /// The speech framework's result, handled on the main actor.
+    ///
+    /// The framework calls back on **its own queue**, and everything the app
+    /// does with a transcript belongs to the main actor: the published text,
+    /// the sheet that closes, the player that starts, the engine that stops.
+    /// Publishing from that queue is a crash — *"Publishing changes from
+    /// background threads are not allowed"* — so the work is handed over
+    /// first.
+    ///
+    /// The method is separate from the callback so a test can hand it a
+    /// transcript without a microphone and a recogniser.
+    nonisolated func handleTranscript(_ transcript: String?,
+                                      isFinal: Bool,
+                                      error: Error?,
+                                      onResult: @escaping @MainActor (String) -> Void) {
+        Task { @MainActor [weak self] in
             guard let self = self else { return }
-            if let result = result {
-                self.recognizedText = result.bestTranscription.formattedString
-                onResult(result.bestTranscription.formattedString)
+            if let transcript {
+                self.recognizedText = transcript
+                onResult(transcript)
             }
-            if error != nil || (result?.isFinal ?? false) {
+            if error != nil || isFinal {
                 self.stopRecording()
             }
         }

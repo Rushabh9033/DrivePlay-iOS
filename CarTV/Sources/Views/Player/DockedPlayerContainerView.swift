@@ -77,6 +77,16 @@ public struct DockedPlayerContainerView: View {
                     .frame(height: 250) // Prominent, larger video display
                     .background(Color.black)
                     .clipped()
+                    // Swiping the picture down puts the player away — the
+                    // minimised bar takes over from there.
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onEnded { value in
+                                if MiniPlayerSwipe.shouldMinimize(translation: value.translation) {
+                                    playbackManager.minimizeToMiniBar()
+                                }
+                            }
+                    )
                 }
                 
                 // Bottom "Browse While You Watch" Catalog (Playlist-specific)

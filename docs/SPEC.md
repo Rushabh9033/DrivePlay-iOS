@@ -103,6 +103,27 @@ Info.plist (AC111). It is the one key that covers every tab, every sheet and
 every window, and it leaves the car exactly as it was — the car paints its own
 chrome, and the app cannot tell a car what colour to be.
 
+The **eleventh pass** (2026-11-04) is the phone's own player. A video that is
+playing could not be put away: the picture stayed on the phone's screen, so
+browsing the catalogue meant giving the video up. There is now a **bar** —
+YouTube's minimised player — that sits **above** the tab bar and never covers
+it, carries the channel's picture and its name, and plays, pauses, skips to the
+next channel of the same group and closes the video (AC112–AC115). A swipe
+down puts the player away the way YouTube does, and only a swipe **down**:
+a drag to the side is not a dismissal (AC116).
+
+Two bugs the user found with it. The **voice search crashed the app** the
+moment it heard something: the speech framework calls back on **its own
+queue**, and the app published the transcript — and closed a sheet, and
+started the player — from that queue, which is *"Publishing changes from
+background threads are not allowed"*. The transcript now crosses to the main
+actor before anything touches the app's state (AC117). And a **portrait**
+video was drawn as a landscape one: every surface asked the player to *fit*
+the picture, so a phone-shot video stood in the middle of the car's screen
+with a black bar on **both** sides. A portrait video now fills the frame, a
+landscape one keeps its edges — a channel's logo at the edge of the picture
+must not be cropped away (AC118).
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -218,6 +239,27 @@ chrome, and the app cannot tell a car what colour to be.
 | 109 | The now-playing artwork is drawn once per channel, not four times a second | `PlaybackManagerTests` |
 | 110 | A video that has just started is not offered to the car twice | `PlaybackManagerTests` |
 | 111 | The app is **dark** whatever the phone's own appearance says | `AppearanceTests` |
+| 112 | A video that is playing can be put away into a bar — and the bar carries the channel's picture and its name | `MiniPlayerTests` |
+| 113 | The bar sits **above** the tab bar and never covers it | `MiniPlayerTests` |
+| 114 | The bar plays and pauses the video, and the bar's ✕ closes it | `MiniPlayerTests` |
+| 115 | The bar's ⏭ plays the next channel of the group the current one belongs to | `MiniPlayerTests` |
+| 116 | A swipe down puts the player away, a drag to the side does not | `MiniPlayerTests` |
+| 117 | The voice search's transcript arrives on the main actor — publishing it off the main thread is a crash | `VoiceSearchTests` |
+| 118 | A portrait video fills the frame instead of standing in the middle of it with black bars on both sides | `VideoGravityTests` |
+| 119 | No rule of the ad blocker stops a captcha — the SonyLIV sign-in keeps working | `AdBlockerTests` |
+| 120 | The ad hosts are still stopped — a blocker that lets everything through is not a blocker | `AdBlockerTests` |
+| 121 | A host that is only **mentioned** in a query string is not blocked — only a host that is **called** | `AdBlockerTests` |
+| 122 | The CSS rule stays out of every frame — a captcha badge lives in a third-party frame | `AdBlockerTests` |
+| 123 | A site the user lets through is left alone, and only that site | `AdBlockerTests` |
+| 124 | The site a tab is on is the key its exemption is remembered by | `AdBlockerTests` |
+| 125 | The blocker can be switched off entirely, and the switch is remembered | `AdBlockerTests` |
+| 126 | The tag manager is not blocked — a site's own configuration travels through it | `AdBlockerTests` |
+| 127 | One odd device does not empty the whole list of a Plex account | `PlexTests` |
+| 128 | `provides` reads as a string and as a list | `PlexTests` |
+| 129 | The account's own phone is not taken for the media server | `PlexTests` |
+| 130 | A resource that says nothing about itself is the server only when it answers on a port | `PlexTests` |
+| 131 | The relay address of a server is asked for — `includeRelay=1` | `PlexTests` |
+| 132 | A refused account is not reported as an account without a server | `PlexTests` |
 
 ## Verification
 

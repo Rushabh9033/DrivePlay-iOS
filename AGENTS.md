@@ -641,6 +641,101 @@ it is set in `project.yml`.
   it was never the bottleneck. The waits were the pictures (one global gate)
   and the re-sends to the car (one per picture).
 
+## Gotchas from the ninth pass (2026-11-04, the minimised player)
+
+- **The iOS 26+ `TabView` swallows `safeAreaInset(edge: .bottom)` whole.** The
+  tab view is UIKit's own (`UIKitAdaptableTabView`) and the root
+  `_UIHostingView<MainTabView>` ends up with **one** subview — the platform
+  view host. A `safeAreaInset` on the bottom edge therefore renders
+  **nothing**: the minimised player was never on the screen, and the state
+  was right all the time. A bar that has to sit **above** the tab bar is an
+  **overlay** in the `ZStack` — the same shape the docked player already used
+  — and the tab bar's height is **measured** from the live window
+  (`MainTabView.tabBarHeightInWindow()`, 83 pt on an iPhone 13 with a home
+  indicator) rather than guessed: the bar floats on iOS 26+ and its height
+  differs from phone to phone.
+- **The tab bar is a `_UIBottomTabBarGroupView` with a floating pill inside
+  it.** `UITabBar.bounds.height` (83) is the whole group, the pill
+  (`_UITabBarItemPlatterView`, 62) floats inside it, and the home indicator's
+  safe area is **below** the pill. Padding by the group's height puts the bar
+  right above the pill; padding by the safe area alone puts it behind it.
+- **`SFSpeechRecognizer` calls back on its own queue.** The result handler of
+  `recognitionTask(with:)` is not on the main thread, so publishing the
+  transcript from it is *"Publishing changes from background threads are not
+  allowed"* — a crash with **no crash report** (it is a fatal error, not a
+  signal). The transcript crosses to the main actor first
+  (`VoiceSearchManager.handleTranscript`, a `nonisolated` seam that hops
+  through `Task { @MainActor in }`); the same goes for `onResult` and for
+  `stopRecording()`. The same rule is in the ReplayKit capture handler, which
+  hands its frames to the main thread before they reach the display layer.
+- **A portrait video needs `.resizeAspectFill`, a landscape one must not have
+  it.** Every surface used `.resizeAspect`, so a 9:16 phone-shot video stood
+  in the middle of the car's landscape screen with a black bar on **both**
+  sides. `VideoGravityPolicy.gravity(for:)` reads the item's own
+  `presentationSize` (the size **with** the preferred transform) and fills the
+  frame only when the picture is taller than it is wide — a landscape channel
+  keeps `.resizeAspect`, because a logo at the edge of the picture must not be
+  cropped away.
+
+## Gotchas from the tenth pass (2026-11-04, the ad blocker and Plex)
+
+- **A content blocker's `url-filter` matches the **whole URL**, the query string
+  included.** The pattern is a regex searched **anywhere** in the URL, so a rule
+  for `googletagmanager.com` also stopped
+  `https://www.google.com/ccm/collect?scrsrc=www.googletagmanager.com` — the
+  page's *own* request, killed by a host it only **mentioned**. A host that is
+  **called** is matched with `if-domain`, which reads the **host** of the request
+  (and the hosts under it). The same goes for `unless-domain`.
+- **A tag manager is not an ad host.** `googletagmanager.com` is the pipe a
+  site's **own** configuration travels through — SonyLIV's sign-in page took its
+  login-and-tray setup from there (measured: the rules took 33 of the page's 93
+  resources away, and the tag manager was one of them), so blocking it breaks
+  the page while the ads it fires at stay blocked **on their own**. A block list
+  that names a tag manager is naming the site's own plumbing.
+- **The CSS rule of a blocker has to be `load-type: ["top-frame"]`.** A captcha
+  badge, a payment form and a consent banner all live in a **third-party
+  frame**, and a rule that matches every frame can hide the thing the user came
+  for. The captcha and identity providers are excepted with `unless-domain` as
+  well.
+- **`ignore-previous-rules` has to come **last**, and it cancels the rules
+  before it.** That is how a site the user let through is left alone — the
+  exemption is a rule, not a flag.
+- **The compiled rule list is cached under its identifier.** WebKit keeps it, and
+  the app asks for it *by name* before it compiles anything — so a list compiled
+  from the **old** rules is found and used, and the new rules are **never
+  compiled**. The identifier (`DrivePlayAdBlockerRulesV7`) has to change with
+  the rules.
+- **Compiling again under the *same* identifier does replace the rules.**
+  Measured: rules A (block `localhost`) stopped a page from loading; rules B
+  (block `127.0.0.1`) compiled under the **same** identifier let it through
+  again. So a recompile for a *changed* rule set (an exemption) does not need
+  a new name — only a change of the rules *themselves* does.
+- **`WKContentRuleListStore.compileContentRuleList` calls back on the main
+  queue.** Waiting for it with a semaphore on the main thread **deadlocks**;
+  the run loop has to keep turning until the list arrives.
+- **`WKUserContentController` cannot be asked what rule lists it holds** —
+  `contentRuleLists` is not public API. Only `add`, `remove` and
+  `removeAllContentRuleLists` exist, so a test has to assert on the *decision*
+  (a rule list to hand over, or none) and not on the controller.
+- **A `WKWebViewConfiguration` is copied when the web view is made, but its
+  `userContentController` is a shared reference** — a rule list added later
+  reaches the web view that is already open, for the **next** load. The page
+  has to be reloaded for a change to be seen — and the rules are compiled in
+  the **background**, so the reload has to happen **after** the compile, not
+  before it. A reload fired at the moment the switch is flipped loads the
+  page with the *old* rules, and the switch looks like it did nothing.
+- **plex.tv answers `provides` both as a string and as a list.** A decoder
+  that knows one of them reads **nothing**, and the server looks like it is not
+  there.
+- **`(try? JSONDecoder().decode(...)) ?? []` turns every error into "no
+  servers".** A decode failure and an account without a server are two
+  different problems; the status is read **before** the body, because a
+  refused account (401) answers with a JSON **object** and not with a list.
+- **A server that is not on the network the phone is on needs its relay
+  address** — `GET /api/v2/resources?includeHttps=1&includeRelay=1`. Without
+  `includeRelay=1` the answer holds a server with **no usable address at
+  all**, and the account looks empty.
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

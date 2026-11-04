@@ -12,7 +12,6 @@ extension InCarAutomotiveController {
         addChild(playerVC)
         playerVC.view.translatesAutoresizingMaskIntoConstraints = false
         playerVC.showsPlaybackControls = false
-        playerVC.videoGravity = .resizeAspect
         playerVC.updatesNowPlayingInfoCenter = false
         videoContainer.addSubview(playerVC.view)
         playerVC.didMove(toParent: self)

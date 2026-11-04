@@ -1,64 +1,83 @@
 import SwiftUI
 import AVKit
 
+/// The gravity that gives a video no black bars on the sides of the frame.
+///
+/// A landscape video is **fitted** into the frame — a channel's logo at the
+/// edge must not be cropped away — while a portrait video **fills** it: bars
+/// on both sides of a landscape box are what reads as a broken picture.
+public enum VideoGravityPolicy {
+    public static func gravity(for size: CGSize) -> AVLayerVideoGravity {
+        guard size.width > 0, size.height > 0 else { return .resizeAspect }
+        return size.height > size.width ? .resizeAspectFill : .resizeAspect
+    }
+}
+
 // MARK: - Direct Metal/CoreAnimation AVPlayerLayer Surface (Docked & In-App Views)
 public final class PlayerUIView: UIView {
     public override static var layerClass: AnyClass {
         return AVPlayerLayer.self
     }
-    
+
     public var playerLayer: AVPlayerLayer {
         return layer as! AVPlayerLayer
     }
-    
+
     public override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .black
         playerLayer.videoGravity = .resizeAspect
     }
-    
+
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         backgroundColor = .black
         playerLayer.videoGravity = .resizeAspect
     }
-    
+
     public override func layoutSubviews() {
         super.layoutSubviews()
         playerLayer.frame = bounds
+        applyGravity()
+    }
+
+    /// A portrait video fills the frame, a landscape one is fitted into it.
+    ///
+    /// The size is the item's own, so the picture is only cropped once the
+    /// video has told the player how big it is.
+    public func applyGravity() {
+        let size = playerLayer.player?.currentItem?.presentationSize ?? .zero
+        playerLayer.videoGravity = VideoGravityPolicy.gravity(for: size)
     }
 }
 
 public struct VideoPlayerView: UIViewRepresentable {
     public let player: AVPlayer
     public var showsPlaybackControls: Bool
-    public var videoGravity: AVLayerVideoGravity
     public var onDismiss: (() -> Void)?
-    
+
     public init(
         player: AVPlayer,
         showsPlaybackControls: Bool = false,
-        videoGravity: AVLayerVideoGravity = .resizeAspect,
         onDismiss: (() -> Void)? = nil
     ) {
         self.player = player
         self.showsPlaybackControls = showsPlaybackControls
-        self.videoGravity = videoGravity
         self.onDismiss = onDismiss
     }
-    
+
     public func makeUIView(context: Context) -> PlayerUIView {
         let view = PlayerUIView()
         view.playerLayer.player = player
-        view.playerLayer.videoGravity = videoGravity
+        view.applyGravity()
         return view
     }
-    
+
     public func updateUIView(_ uiView: PlayerUIView, context: Context) {
         if uiView.playerLayer.player !== player {
             uiView.playerLayer.player = player
         }
-        uiView.playerLayer.videoGravity = videoGravity
+        uiView.applyGravity()
     }
 }
 
@@ -86,11 +105,30 @@ public final class LandscapeAVPlayerViewController: AVPlayerViewController {
         super.viewDidLoad()
         setupDoubleTapGesture()
         setupOnScreenSkipButtons()
+        setupSwipeDownGesture()
+    }
+
+    /// Swiping down puts the player away — YouTube's way — and leaves the
+    /// minimised bar behind.
+    private func setupSwipeDownGesture() {
+        let swipe = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipeDown))
+        swipe.direction = .down
+        view.addGestureRecognizer(swipe)
+    }
+
+    @objc private func handleSwipeDown() {
+        PlaybackManager.shared.minimizeToMiniBar()
     }
     
     public override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         scheduleControlsFade()
+    }
+
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // A portrait video fills the frame, a landscape one is fitted into it.
+        videoGravity = VideoGravityPolicy.gravity(for: player?.currentItem?.presentationSize ?? .zero)
     }
     
     private func setupDoubleTapGesture() {
@@ -329,7 +367,6 @@ public final class NativeFullScreenPlayerPresenter: NSObject, AVPlayerViewContro
         playerVC.showsPlaybackControls = true
         playerVC.allowsPictureInPicturePlayback = true
         playerVC.updatesNowPlayingInfoCenter = true
-        playerVC.videoGravity = .resizeAspect
         playerVC.modalPresentationStyle = .fullScreen
         playerVC.delegate = self
         

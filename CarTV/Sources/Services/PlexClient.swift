@@ -2,7 +2,33 @@ import Foundation
 
 public struct PlexClient: Sendable {
     public init() {}
-    
+
+    /// What went wrong while talking to plex.tv.
+    ///
+    /// Every one of these used to arrive as the same message — *"No Plex
+    /// media server found on this account"* — which is a **lie**: an account
+    /// that was refused and an account that has no server are two different
+    /// problems with two different answers.
+    public enum PlexError: LocalizedError {
+        /// plex.tv refused the request — the account link was not accepted.
+        case refused(status: Int)
+        /// plex.tv answered with something the app cannot read.
+        case unreadableAnswer
+        /// The account is fine, but it has no media server on it.
+        case noMediaServer
+
+        public var errorDescription: String? {
+            switch self {
+            case .refused(let status):
+                return "plex.tv refused the account (HTTP \(status)). The link was not accepted — sign in again at plex.tv/link."
+            case .unreadableAnswer:
+                return "plex.tv's answer could not be read."
+            case .noMediaServer:
+                return "This account has no media server. Add one in the Plex app, then check again."
+            }
+        }
+    }
+
     public struct PlexPin: Codable, Sendable {
         public let id: Int
         public let code: String
@@ -22,15 +48,84 @@ public struct PlexClient: Sendable {
         }
     }
     
+    /// A device that is signed in to an account.
+    ///
+    /// Every value has a default: **one odd device must not empty the whole
+    /// list**. A resource that leaves a field out is a device the account does
+    /// not use — it is not a reason to answer *"this account has no media
+    /// server"*.
     public struct PlexResource: Codable, Sendable {
         public let name: String
         public let clientIdentifier: String
         public let provides: String
         public let connections: [PlexConnection]?
-        
+
         public struct PlexConnection: Codable, Sendable {
             public let uri: String
             public let local: Bool
+            /// The port the server answers on (32400 for a media server).
+            public let port: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case uri
+                case local
+                case port
+            }
+
+            public init(uri: String, local: Bool, port: Int? = nil) {
+                self.uri = uri
+                self.local = local
+                self.port = port
+            }
+
+            public init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                self.uri = try container.decodeIfPresent(String.self, forKey: .uri) ?? ""
+                self.local = try container.decodeIfPresent(Bool.self, forKey: .local) ?? false
+                self.port = try container.decodeIfPresent(Int.self, forKey: .port)
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case clientIdentifier
+            case provides
+            case connections
+        }
+
+        public init(name: String,
+                    clientIdentifier: String,
+                    provides: String,
+                    connections: [PlexConnection]?) {
+            self.name = name
+            self.clientIdentifier = clientIdentifier
+            self.provides = provides
+            self.connections = connections
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+            self.clientIdentifier = try container.decodeIfPresent(String.self, forKey: .clientIdentifier) ?? ""
+            self.provides = Self.decodeProvides(from: container)
+            self.connections = try container.decodeIfPresent([PlexConnection].self, forKey: .connections)
+        }
+
+        /// What the device provides: a server, a player, a client.
+        ///
+        /// plex.tv has answered this both as a string (`"server"`) and as a
+        /// list (`["server"]`); a decoder that only knows one of them reads
+        /// **nothing** and the server looks like it is not there.
+        private static func decodeProvides(
+            from container: KeyedDecodingContainer<CodingKeys>
+        ) -> String {
+            if let text = try? container.decodeIfPresent(String.self, forKey: .provides) {
+                return text
+            }
+            if let list = try? container.decodeIfPresent([String].self, forKey: .provides) {
+                return list.joined(separator: ",")
+            }
+            return ""
         }
     }
     
@@ -147,6 +242,15 @@ public struct PlexClient: Sendable {
 
     private let clientIdentifier = "CarTV-iOS-Player"
 
+    /// Where the servers of an account are asked for.
+    ///
+    /// `includeRelay=1` is not optional: it is what puts the `*.plex.direct`
+    /// address of a server into the answer. Without it a phone that is not on
+    /// the server's own network sees a server with **no usable address at
+    /// all**, and the account looks like it has no server.
+    public static let resourcesURL =
+        "https://plex.tv/api/v2/resources?includeHttps=1&includeRelay=1"
+
     public func createPin() async throws -> PlexPin {
         // Omitting strong=true returns the official 4-character code (e.g. "RN9H") for plex.tv/link
         guard let url = URL(string: "https://plex.tv/api/v2/pins") else {
@@ -176,16 +280,30 @@ public struct PlexClient: Sendable {
     }
     
     public func fetchServers(authToken: String) async throws -> [PlexResource] {
-        guard let url = URL(string: "https://plex.tv/api/v2/resources?includeHttps=1") else {
+        // `includeRelay=1` is what puts the `*.plex.direct` address of a
+        // server into the answer: without it a phone that is not on the
+        // server's own network sees a server with no usable address at all.
+        guard let url = URL(string: Self.resourcesURL) else {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue(clientIdentifier, forHTTPHeaderField: "X-Plex-Client-Identifier")
         req.setValue(authToken, forHTTPHeaderField: "X-Plex-Token")
-        
-        let (data, _) = try await URLSession.shared.data(for: req)
-        return (try? JSONDecoder().decode([PlexResource].self, from: data)) ?? []
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        // The status says what went wrong. An account that was not accepted
+        // answers 401 with a JSON **object**, and decoding that as a list of
+        // resources fails — so the status has to be read before the body,
+        // and a failed decode must not be swallowed into "no servers".
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw PlexError.refused(status: http.statusCode)
+        }
+        do {
+            return try JSONDecoder().decode([PlexResource].self, from: data)
+        } catch {
+            throw PlexError.unreadableAnswer
+        }
     }
 
     /// The media server of an account: its name and the address it answers on.
@@ -206,7 +324,17 @@ public struct PlexClient: Sendable {
     /// one server's remote address must not beat another server's local one.
     public static func preferredServer(in servers: [PlexResource]) -> (name: String, address: String)? {
         let mediaServers = servers.filter { $0.provides.contains("server") }
-        let candidates = mediaServers.isEmpty ? servers : mediaServers
+        // A resource that does not say what it provides is a candidate only
+        // when it answers on a port — that is what a media server does. A
+        // resource that says it is a **player** is never the server, whatever
+        // it answers on: falling back to *every* resource would let the
+        // account's own phone pass for the server.
+        let candidates = mediaServers.isEmpty
+            ? servers.filter { resource in
+                resource.provides.isEmpty
+                    && (resource.connections ?? []).contains { $0.port != nil && !$0.uri.isEmpty }
+            }
+            : mediaServers
         // A server that answers on the local network comes first; the order
         // plex.tv sent is kept among the rest.
         let ordered = candidates.filter { hasLocalAddress($0) }

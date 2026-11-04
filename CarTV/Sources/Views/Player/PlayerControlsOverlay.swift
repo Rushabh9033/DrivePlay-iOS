@@ -89,7 +89,19 @@ public struct PlayerControlsOverlay: View {
                                 .foregroundColor(.white.opacity(0.9))
                                 .padding(6)
                         }
-                        
+
+                        // The minimise button: the player collapses into the
+                        // bar at the bottom and the video keeps playing.
+                        if playbackManager.presentationMode == .docked {
+                            Button(action: { playbackManager.minimizeToMiniBar() }) {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.9))
+                                    .padding(6)
+                            }
+                            .accessibilityLabel("Minimise")
+                        }
+
                         if let channel = playbackManager.currentChannel {
                             Text(channel.name)
                                 .font(.system(size: 15, weight: .semibold))

@@ -40,6 +40,12 @@ extension InCarAutomotiveController {
         if let p = PlaybackManager.shared.player {
             self.playerVC.player = p
             self.playerLayer?.player = p
+            // A portrait video fills the frame, a landscape one is fitted into
+            // it — no black bars on the sides of the car's screen.
+            let videoSize = p.currentItem?.presentationSize ?? .zero
+            let gravity = VideoGravityPolicy.gravity(for: videoSize)
+            self.playerVC.videoGravity = gravity
+            self.playerLayer?.videoGravity = gravity
             p.play()
         }
         

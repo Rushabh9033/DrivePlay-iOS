@@ -335,7 +335,7 @@ public struct AddSourceSheet: View {
                 // plex.tv is the cloud API, not the media server: the server of
                 // the account has to be found before a source can point at it.
                 guard let server = try await client.preferredServer(authToken: token) else {
-                    self.plexStatusMessage = "No Plex media server found on this account."
+                    self.plexStatusMessage = PlexClient.PlexError.noMediaServer.errorDescription
                     return
                 }
                 await playlistStore.addPlexSource(name: server.name, serverUrl: server.address, token: token)
@@ -344,6 +344,10 @@ public struct AddSourceSheet: View {
                 } else {
                     dismiss()
                 }
+            } catch let error as PlexClient.PlexError {
+                // A refused account and an unreadable answer are two different
+                // problems — they must not both read as "no media server".
+                self.plexStatusMessage = error.errorDescription ?? "Could not reach plex.tv."
             } catch {
                 self.plexStatusMessage = "Could not reach plex.tv: \(URLPolicy.message(for: error))"
             }

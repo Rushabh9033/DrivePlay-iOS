@@ -5,6 +5,7 @@ import Combine
 
 public enum PlayerPresentationMode: Equatable, Sendable {
     case hidden
+    case mini         // The phone shows no picture of its own — a bar at the bottom does
     case docked       // "Browse while you watch" docked at top
     case fullscreen   // Fullscreen video
     case carMode      // Landscape car dashboard layout
@@ -308,6 +309,48 @@ public final class PlaybackManager: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    // MARK: - The minimised player
+
+    /// True while the phone shows the minimised player — the bar at the
+    /// bottom of the screen.
+    ///
+    /// The bar is the phone's own player while the video is playing: the phone
+    /// draws no picture of its own, so the frames go into the app's offscreen
+    /// output and the car's display can still take them.
+    public var showsMiniPlayer: Bool { presentationMode == .mini && currentChannel != nil }
+
+    /// Collapses the player into the bar at the bottom.
+    ///
+    /// The video keeps playing — only the phone's own picture of it goes away.
+    public func minimizeToMiniBar() {
+        guard player != nil, currentChannel != nil else { return }
+        presentationMode = .mini
+    }
+
+    /// Brings the minimised player back to the full screen.
+    public func expandFromMiniBar() {
+        guard presentationMode == .mini else { return }
+        presentationMode = .docked
+    }
+
+    /// Plays the next channel of the group the current one belongs to.
+    ///
+    /// - Parameter siblings: the channels of the current channel's **own**
+    ///   group, in the order they play (`PlaylistStore.channels(inGroupOf:)`).
+    ///   Live television has no last channel, so the list wraps around.
+    ///
+    /// The player stays where it was: a next channel played from the minimised
+    /// bar stays minimised.
+    @discardableResult
+    public func playNextChannel(in siblings: [Channel]) -> Bool {
+        guard let current = currentChannel else { return false }
+        guard !siblings.isEmpty,
+              let index = siblings.firstIndex(where: { $0.id == current.id }) else { return false }
+        let next = siblings[(index + 1) % siblings.count]
+        play(channel: next, presentation: presentationMode)
+        return true
+    }
+
     // MARK: - The picture: on the phone or on the car
 
     /// Takes the picture back from the car's display.
@@ -487,7 +530,11 @@ public final class PlaybackManager: ObservableObject {
             videoOutput.detach()
             return
         }
-        if presentationMode == .hidden {
+        // The phone draws no picture of its own in either of these modes — the
+        // car owns it, or the minimised bar does. Either way the frames need
+        // an output of the app's own, or the item waits for one that never
+        // comes and the car's display stays black.
+        if presentationMode == .hidden || presentationMode == .mini {
             videoOutput.attach(to: p)
         } else {
             videoOutput.detach()
