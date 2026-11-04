@@ -9,7 +9,8 @@ protocol CarPlayTabActions: AnyObject {
     func play(channel: Channel)
     func pushChannels(title: String, channels: [Channel])
     func pushCategories(title: String, categories: [ChannelGroup])
-    func presentSearch()
+    /// The Home tab's search for a channel — **pushed** onto the stack.
+    func pushChannelSearch()
     func togglePicture()
     func togglePlayback()
     func startScreenShare()
@@ -664,6 +665,20 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
     /// result was.
     private var results: [ObjectIdentifier: String] = [:]
 
+    /// The row that takes the user back to the browser's list.
+    ///
+    /// A `CPSearchTemplate` cannot carry a navigation bar button — it does
+    /// not conform to `CPBarButtonProviding` — so the way back is a row of
+    /// the search's own list.
+    private var backRow: CPListItem?
+
+    /// The row that shows the page the phone has open — built **once** and
+    /// kept until the page changes.
+    ///
+    /// The search template is handed a fresh list on every keystroke, and a
+    /// row that is built again is a row the car has to be given again.
+    private var currentPageRow: (url: String, item: CPListItem)?
+
     /// The rows of the app's own sites — built **once**.
     ///
     /// The search template hands the car a fresh list on **every keystroke**,
@@ -685,15 +700,21 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
 
     /// The rows the browser offers: the page the phone shows now, then the
     /// app's own sites.
-    static func rows(currentURL: String) -> [Row] {
+    func rows(currentURL: String) -> [Row] {
         var rows: [Row] = []
         if !currentURL.isEmpty {
-            rows.append(Row(item: CPListItem(text: "On the phone now",
-                                              detailText: currentURL,
-                                              image: UIImage(systemName: "safari.fill")),
-                             address: currentURL))
+            let item: CPListItem
+            if let known = currentPageRow, known.url == currentURL {
+                item = known.item
+            } else {
+                item = CPListItem(text: "On the phone now",
+                                  detailText: currentURL,
+                                  image: UIImage(systemName: "safari.fill"))
+                currentPageRow = (currentURL, item)
+            }
+            rows.append(Row(item: item, address: currentURL))
         }
-        rows.append(contentsOf: siteRows)
+        rows.append(contentsOf: Self.siteRows)
         return rows
     }
 
@@ -703,30 +724,45 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
         self.searchText = searchText
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var rows: [Row] = []
+        var offered: [Row] = []
+        // The way back — the first row, **always**: a search the user cannot
+        // get out of is a dead end, and typing must not take the way out
+        // away.
+        let back = backRow ?? CPListItem(text: "Back to sites",
+                                          detailText: nil,
+                                          image: UIImage(systemName: "chevron.backward"))
+        backRow = back
+        offered.append(Row(item: back, address: ""))
         // What the user typed is the first row: it opens the text the way the
         // phone's browser does — a URL is a URL, anything else is a search.
         if !query.isEmpty {
-            rows.append(Row(item: CPListItem(text: "Open \"\(query)\"",
-                                             detailText: query,
-                                             image: UIImage(systemName: "magnifyingglass")),
-                             address: query))
+            offered.append(Row(item: CPListItem(text: "Open \"\(query)\"",
+                                                 detailText: query,
+                                                 image: UIImage(systemName: "magnifyingglass")),
+                               address: query))
         }
-        for row in Self.rows(currentURL: BrowserTabManager.shared.activeTabURL) {
+        for row in rows(currentURL: BrowserTabManager.shared.activeTabURL) {
             guard query.isEmpty || row.address.localizedCaseInsensitiveContains(query) else { continue }
-            rows.append(row)
+            offered.append(row)
         }
 
         results = [:]
-        for row in rows {
+        for row in offered {
+            // The way back is not an address — it stands for the list.
+            if let back = backRow, row.item === back { continue }
             results[ObjectIdentifier(row.item)] = row.address
         }
-        completionHandler(rows.map(\.item))
+        completionHandler(offered.map(\.item))
     }
 
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
                                selectedResult item: CPListItem,
                                completionHandler: @escaping () -> Void) {
+        if let back = backRow, item === back {
+            completionHandler()
+            dismissAddressBar()
+            return
+        }
         if let address = results[ObjectIdentifier(item)] {
             openOnPhone(address)
         } else {

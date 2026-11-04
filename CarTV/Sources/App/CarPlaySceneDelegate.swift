@@ -119,7 +119,7 @@ public final class CarPlaySceneDelegate: UIResponder,
               Date().timeIntervalSince(built) * 1000)
 
         home.leadingNavigationBarButtons = [
-            CPBarButton(title: "Search", handler: { [weak self] _ in self?.presentSearch() })
+            CPBarButton(title: "Search", handler: { [weak self] _ in self?.pushChannelSearch() })
         ]
         home.emptyViewTitleVariants = ["No channels"]
         home.emptyViewSubtitleVariants = ["Add a playlist source in the DrivePlay app"]
@@ -231,6 +231,11 @@ public final class CarPlaySceneDelegate: UIResponder,
     /// The catalogue and the favourites are one thing: they come from the same
     /// list, so both tabs are rebuilt together.
     private func refreshCatalogue() {
+        // The search rows carry the names the catalogue had — a channel that
+        // was renamed has to be found under its new name.
+        searchRows.removeAll()
+        searchRowOrder.removeAll()
+
         let store = PlaylistStore.shared
         homeTemplate?.updateSections(CarPlayTemplates.homeSections(groups: store.allGroups,
                                                                    channels: store.channels,
@@ -309,14 +314,21 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
-    func presentSearch() {
-        guard let interfaceController else { return }
-        let template = searchTemplate ?? CPSearchTemplate()
+    /// The Home tab's search — a search for a channel.
+    ///
+    /// It used to be **presented**, and that could never work: `presentTemplate`
+    /// accepts an action sheet, an alert and voice control — nothing else — so
+    /// the presentation failed every time and the Search button did nothing
+    /// at all. A search template is **pushed** onto the stack instead, the
+    /// same way the browser's address bar is.
+    func pushChannelSearch() {
+        guard let controller = interfaceController else { return }
+        let template = CPSearchTemplate()
         template.delegate = self
         searchTemplate = template
-        interfaceController.presentTemplate(template, animated: true) { success, error in
+        controller.pushTemplate(template, animated: true) { success, error in
             if !success {
-                NSLog("DRIVEPLAY present search failed: %@", String(describing: error))
+                NSLog("DRIVEPLAY push the channel search failed: %@", String(describing: error))
             }
         }
     }
@@ -348,10 +360,18 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     /// The address bar goes back to the list it was pushed from.
     private func popBrowserAddressBar() {
+        popTopTemplate("the browser address bar")
+    }
+
+    /// Goes back one template.
+    ///
+    /// A search template carries no navigation bar button of its own — it does
+    /// not conform to `CPBarButtonProviding` — so the way back is a row of
+    /// its own list, or this call.
+    private func popTopTemplate(_ what: String = "the template") {
         interfaceController?.popTemplate(animated: true) { success, error in
             if !success {
-                NSLog("DRIVEPLAY pop the browser address bar failed: %@",
-                      String(describing: error))
+                NSLog("DRIVEPLAY pop %@ failed: %@", what, String(describing: error))
             }
         }
     }
@@ -463,6 +483,31 @@ public final class CarPlaySceneDelegate: UIResponder,
     /// result is remembered by the item itself.
     private var searchResults: [ObjectIdentifier: Channel] = [:]
 
+    /// The rows the channel search offers — built **once** and kept.
+    ///
+    /// The search template is handed a fresh list on **every keystroke**, and a
+    /// row that is built again is a row the car has to be given again — with
+    /// its picture, drawn at the car's scale. Thirty of those per keystroke
+    /// is what took the CarPlay session down.
+    ///
+    /// The cache is **bounded**: every row holds a picture, and the whole
+    /// catalogue would be a hundred megabytes of them.
+    private var searchRows: [UUID: CPListItem] = [:]
+    /// The rows in the order they were built — the oldest one goes first.
+    private var searchRowOrder: [UUID] = []
+    /// How many rows the search keeps.
+    private static let searchRowCapacity = 60
+    /// How many channels the search offers.
+    private static let searchResultLimit = 30
+
+    /// The row that takes the user back to the list the search was pushed
+    /// from.
+    ///
+    /// A `CPSearchTemplate` does not conform to `CPBarButtonProviding` — it
+    /// cannot carry a navigation bar button — so the way back has to be a row
+    /// of the search's own list.
+    private var searchBackRow: CPListItem?
+
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
                                updatedSearchText searchText: String,
                                completionHandler: @escaping ([CPListItem]) -> Void) {
@@ -475,10 +520,21 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
 
         var results: [ObjectIdentifier: Channel] = [:]
-        let items = filtered.prefix(30).map { channel -> CPListItem in
-            let item = CarPlayTemplates.channelItem(channel, owner: self, prefersVideo: Self.isEntitledToVideo)
+        var items: [CPListItem] = []
+
+        // The way back — the first row, **always**: a search the user cannot
+        // get out of is a dead end, and typing must not take the way out
+        // away.
+        let back = searchBackRow ?? CPListItem(text: "Back to channels",
+                                                detailText: nil,
+                                                image: UIImage(systemName: "chevron.backward"))
+        searchBackRow = back
+        items.append(back)
+
+        for channel in filtered.prefix(Self.searchResultLimit) {
+            let item = searchRow(for: channel)
             results[ObjectIdentifier(item)] = channel
-            return item
+            items.append(item)
         }
         searchResults = results
         completionHandler(items)
@@ -487,11 +543,29 @@ public final class CarPlaySceneDelegate: UIResponder,
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
                                selectedResult item: CPListItem,
                                completionHandler: @escaping () -> Void) {
+        if let back = searchBackRow, item === back {
+            popTopTemplate()
+            completionHandler()
+            return
+        }
         if let channel = searchResults[ObjectIdentifier(item)] {
             play(channel: channel)
         } else {
             NSLog("DRIVEPLAY the selected search result stands for no channel")
         }
         completionHandler()
+    }
+
+    /// The row for a channel — built the first time it is asked for and kept
+    /// until the cache is full.
+    private func searchRow(for channel: Channel) -> CPListItem {
+        if let item = searchRows[channel.id] { return item }
+        let item = CarPlayTemplates.channelItem(channel, owner: self, prefersVideo: Self.isEntitledToVideo)
+        searchRows[channel.id] = item
+        searchRowOrder.append(channel.id)
+        if searchRowOrder.count > Self.searchRowCapacity {
+            searchRows[searchRowOrder.removeFirst()] = nil
+        }
+        return item
     }
 }

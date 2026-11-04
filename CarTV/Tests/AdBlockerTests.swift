@@ -322,6 +322,33 @@ final class AdBlockerTests: XCTestCase {
         }
     }
 
+    /// AC152: the rules are **not** taken away and put back on every
+    /// navigation.
+    ///
+    /// The blocker used to call `removeAllContentRuleLists()` and `add()` on
+    /// the **live** web view's content controller on every single navigation.
+    /// A `WKWebViewConfiguration` is copied when the web view is made, but its
+    /// `userContentController` is a **shared reference** — so the rule store
+    /// of the content process was torn down **under the page that was
+    /// loading**. The device's own log says what that does: the GPU process
+    /// and every web content process die with `reason=Crash`, and the crash
+    /// handler then sent the tab back to the start page — the user's *"it
+    /// crash the browser tab and redirect tom home screen"*.
+    ///
+    /// The rules are applied **once** now: the second application changes
+    /// nothing, so a navigation that changes nothing changes nothing.
+    func test_AC152_the_rules_are_not_taken_away_and_put_back_on_every_navigation() {
+        let configuration = WKWebViewConfiguration()
+
+        let first = AdBlockerEngine.shared.apply(to: configuration)
+        let second = AdBlockerEngine.shared.apply(to: configuration)
+        let third = AdBlockerEngine.shared.apply(to: configuration)
+
+        XCTAssertTrue(first, "the rules were never applied at all")
+        XCTAssertFalse(second, "the rules were taken away and put back again — the content process is killed under the page")
+        XCTAssertFalse(third, "the rules were taken away and put back again — the content process is killed under the page")
+    }
+
     // MARK: - WebKit's matching, in as few lines as it takes
 
     /// Whether the rules stop a request.

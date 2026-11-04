@@ -231,20 +231,38 @@ public final class BrowserTabItem: NSObject, Identifiable, ObservableObject, WKN
     /// the app is taken down with it (the watchdog kills an app that stops
     /// answering). A page that dies twice is the page's own fault, so the
     /// tab says so and stops.
+    ///
+    /// The **address is kept**. Sending the tab back to the start page is the
+    /// user's *"it crash the browser tab and redirect tom home screen"* — the
+    /// page is thrown away, and the browser looks as if it had never been
+    /// asked for it. The tab says what happened instead, and the reload
+    /// button in the browser's own bar brings the page back.
     nonisolated public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         NSLog("DRIVEPLAY the page's web process died")
         Task { @MainActor in
-            if self.hasReloadedAfterCrash {
-                self.hasReloadedAfterCrash = false
-                self.isLoading = false
-                self.title = "The page crashed"
-                self.urlString = ""
-                BrowserTabManager.shared.objectWillChange.send()
-                return
-            }
-            self.hasReloadedAfterCrash = true
-            self.reload()
+            self.handleWebProcessDeath()
         }
+    }
+
+    /// What the tab does when the page's web process died.
+    ///
+    /// The first death is reloaded **once**; the second is reported and the
+    /// address is **kept** — sending the tab back to the start page is the
+    /// user's *"it crash the browser tab and redirect tom home screen"*.
+    ///
+    /// - Returns: `true` when the page was loaded again.
+    @discardableResult
+    func handleWebProcessDeath() -> Bool {
+        if hasReloadedAfterCrash {
+            hasReloadedAfterCrash = false
+            isLoading = false
+            title = "The page crashed"
+            BrowserTabManager.shared.objectWillChange.send()
+            return false
+        }
+        hasReloadedAfterCrash = true
+        reload()
+        return true
     }
     
     deinit {
@@ -365,12 +383,23 @@ public final class BrowserTabManager: ObservableObject {
             tab.objectWillChange
                 .sink { [weak self] _ in
                     guard let self = self else { return }
-                    if self.activeTab?.id == tab.id {
-                        if self.activeTabURL != tab.urlString {
-                            self.activeTabURL = tab.urlString
-                        }
-                    }
                     self.objectWillChange.send()
+                }
+                .store(in: &cancellables)
+            // The **new** address, not the old one.
+            //
+            // `objectWillChange` fires *before* the value changes, so a mirror
+            // that reads `tab.urlString` there is always one change behind —
+            // and the browser's start page is shown while the page is still
+            // there. The publisher carries the value the property is about to
+            // take, so it is the one to read.
+            tab.$urlString
+                .dropFirst()
+                .sink { [weak self] newValue in
+                    guard let self = self else { return }
+                    if self.activeTab?.id == tab.id {
+                        self.activeTabURL = newValue
+                    }
                 }
                 .store(in: &cancellables)
         }

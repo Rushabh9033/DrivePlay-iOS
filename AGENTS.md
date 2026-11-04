@@ -924,6 +924,68 @@ it is set in `project.yml`.
   a stream of its own. Closing that needs an App Group or the user's
   confirmation — **ask first**.
 
+## Gotchas from the sixteenth pass (2026-11-04, the whole browser mechanism)
+
+- **A content rule list must be applied once, not on every navigation.**
+  A `WKWebViewConfiguration` is copied when the web view is made, but its
+  `userContentController` is a **shared reference** — so
+  `removeAllContentRuleLists()` + `add()` on the live controller tears the
+  content process's rule store down **under the page that is loading**. The
+  device's own log shows what that does: `GPUProcessProxy::gpuProcessExited:
+  reason=Crash` and `WebProcessProxy::processDidTerminateOrFailedToLaunch:
+  reason=Crash`, with **no crash report** from the app. The rules are applied
+  **once** now, and `apply(to:)` says whether it changed anything so the
+  caller knows whether the page has to be loaded again.
+- **An empty address IS the start page.** The crash handler emptied the
+  tab's address, so a page whose web process died was thrown away and the
+  user was back at the home screen — the user's *"it crash the browser tab
+  and redirect tom home screen"*. Keep the address and **say** what happened.
+- **`objectWillChange` fires *before* the value changes.** A mirror that
+  reads the old value inside `objectWillChange` is always **one change
+  behind** — the address bar showed the page's *previous* address. The
+  `$published` publisher carries the **new** value; subscribe to that.
+- **Two text fields, one `@State`, is one field.** The address bar and the
+  start page's own search box shared a binding, so what was typed in one
+  appeared in the other and the change handlers wiped it. Each box has its
+  own state, and the bar is only filled **while it is empty** — filling it
+  over what the user has typed is what made the typing look like it did
+  nothing at all.
+- **`presentTemplate` accepts an action sheet, an alert and voice control —
+  nothing else.** `presentSearch()` could therefore **never** work: the
+  presentation failed every time and the Search button did nothing at all. A
+  search template is **pushed** (`pushTemplate`) instead.
+- **A `CPSearchTemplate` cannot carry a navigation bar button.** It does not
+  conform to `CPBarButtonProviding` (only `CPListTemplate`, `CPGridTemplate`,
+  `CPContactTemplate`, `CPInformationTemplate`, `CPMapTemplate`,
+  `CPPointOfInterestTemplate` and `CPVoiceControlTemplate` do), so a pushed
+  search has **no way back** except a row of its own list.
+- **A search template's delegate is `weak`.** The app has to hold it, or the
+  results stop coming.
+
+## Gotchas from the seventeenth pass (2026-11-04, the page the car asks for)
+
+- **The tab the app shows has to be shared state.** It was a `@State` inside
+  `MainTabView`, so **nothing outside the view could change it**: the car
+  asked for a page, the page opened on the phone's browser tab, and the phone
+  stayed on the tab it was on. The share the car needs captures **the phone's
+  screen** — so the page has to be *on* the screen, or the car shares the
+  wrong one and both screens show nothing. The selection is shared
+  (`AppTabSelection`) and the car's page request brings the browser forward.
+- **A row added to a list breaks every test that indexes it.** The way back
+  out of a search is a row of the search's own list, and making it the
+  **first** row broke two older tests that took `results.first` to be the
+  channel (AC69) and the typed text (AC99). Look the row up **by its text**.
+  The repo's own rule — *"a test that indexes rows by position takes the
+  whole test runner with it"* — is about crashes; this is the other half of
+  it: the test does not crash, it **fails**, and it fails for a reason that
+  has nothing to do with the code it is about.
+- **The CarPlay Simulator's "No Devices Connected" is the cable.** Over Wi-Fi
+  the phone is a perfect test target — the whole suite runs on it — but the
+  simulator lists **no device at all**, because Xcode 27 attaches to physical
+  devices over USB only. Check the *Sessions* menu before blaming the app:
+  the templates are covered by the tests, and the last mile needs the phone
+  on the bus.
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

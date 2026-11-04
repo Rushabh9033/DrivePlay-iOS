@@ -1,16 +1,10 @@
 import SwiftUI
 import UIKit
 
-public enum MainTab: Int, Hashable, CaseIterable {
-    case home = 0
-    case browser = 1
-    case vault = 2
-    case cockpit = 3
-    case settings = 4
-}
-
 public struct MainTabView: View {
-    @State private var selectedTab: MainTab = .home
+    /// The tab the app shows — shared, so the car can bring the browser to
+    /// the front (see `AppTabSelection`).
+    @ObservedObject private var tabs = AppTabSelection.shared
     @ObservedObject var playbackManager = PlaybackManager.shared
     @ObservedObject var orientationMonitor = DeviceOrientationMonitor.shared
     /// The height of the tab bar, measured from the live window.
@@ -21,7 +15,7 @@ public struct MainTabView: View {
     public var body: some View {
         ZStack(alignment: .bottom) {
             // Official Apple Native TabView
-            TabView(selection: $selectedTab) {
+            TabView(selection: $tabs.tab) {
                 NavigationStack {
                     HomeView()
                 }

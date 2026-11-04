@@ -27,14 +27,47 @@ public struct BookmarkItem: Identifiable {
     }
 }
 
+/// The browser's two search boxes.
+///
+/// The address bar at the bottom and the start page's own search box are two
+/// text fields — and they used to share **one** piece of state, so what the
+/// user typed in one of them appeared in the other, and the change handlers
+/// wiped it. Each box keeps its own text here.
+public struct BrowserAddressBoxes: Equatable {
+
+    /// The address bar's text.
+    public var address: String = ""
+    /// The start page's own search box.
+    public var startPageQuery: String = ""
+
+    /// Fills the address bar with the page's address when the user taps it.
+    ///
+    /// **Only while it is empty.** A user who has already typed keeps what
+    /// they typed: filling the field over their text is what made the typing
+    /// look like it did nothing at all.
+    public mutating func beginEditingAddress(currentURL: String) {
+        if address.isEmpty { address = currentURL }
+    }
+
+    /// The text a submit opens.
+    ///
+    /// The text is taken **first**: giving the keyboard up empties the box,
+    /// and a box that is read after it was emptied opens nothing.
+    public static func submitted(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 public struct InAppBrowserView: View {
     @ObservedObject var tabManager = BrowserTabManager.shared
     @ObservedObject var adBlocker = AdBlockerEngine.shared
     @ObservedObject private var share = ScreenShareService.shared
 
-    @State private var addressInput: String = ""
+    @State private var boxes = BrowserAddressBoxes()
     @State private var showAdBlockInfo: Bool = false
     @FocusState private var isAddressFieldFocused: Bool
+    @FocusState private var isStartPageFieldFocused: Bool
     
     // MARK: - Bookmarks Catalog
     //
@@ -85,7 +118,8 @@ public struct InAppBrowserView: View {
                         withAnimation {
                             tabManager.activeTab?.urlString = ""
                             tabManager.updateActiveTabState(url: "")
-                            addressInput = ""
+                            boxes.address = ""
+                            boxes.startPageQuery = ""
                         }
                     } label: {
                         Image(systemName: "house")
@@ -104,9 +138,12 @@ public struct InAppBrowserView: View {
         }
         .onChange(of: isAddressFieldFocused) { focused in
             if focused {
-                if !tabManager.activeTabURL.isEmpty {
-                    addressInput = tabManager.activeTabURL
-                }
+                // The bar shows the page's address so the user can edit it —
+                // but **only while it is empty**. A user who has already
+                // started typing keeps what they typed: filling the field
+                // over their text is what made the typing look like it did
+                // nothing at all.
+                boxes.beginEditingAddress(currentURL: tabManager.activeTabURL)
             } else {
                 syncAddressFieldWithActiveTab()
             }
@@ -156,7 +193,7 @@ public struct InAppBrowserView: View {
     }
 
     private func syncAddressFieldWithActiveTab() {
-        addressInput = ""
+        boxes.address = ""
     }
     
     private var displayAddressText: String {
@@ -227,7 +264,7 @@ public struct InAppBrowserView: View {
                 
                 TextField(
                     tabManager.activeTabURL.isEmpty ? "Search or enter address" : displayAddressText,
-                    text: $addressInput
+                    text: $boxes.address
                 )
                 .font(.system(size: 15))
                 .foregroundColor(.primary)
@@ -240,9 +277,9 @@ public struct InAppBrowserView: View {
                     submitAddress()
                 }
                 
-                if !addressInput.isEmpty {
+                if !boxes.address.isEmpty {
                     Button {
-                        addressInput = ""
+                        boxes.address = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
@@ -300,7 +337,7 @@ public struct InAppBrowserView: View {
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         tabManager.createNewTab(urlString: "", dismissTabGrid: false)
-                        addressInput = ""
+                        boxes.address = ""
                         isAddressFieldFocused = true
                     }
                 } label: {
@@ -353,19 +390,20 @@ public struct InAppBrowserView: View {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
                     
-                    TextField("Search Google or type a web address...", text: $addressInput)
+                    TextField("Search Google or type a web address...", text: $boxes.startPageQuery)
                         .font(.system(size: 16))
+                        .focused($isStartPageFieldFocused)
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .keyboardType(.webSearch)
                         .submitLabel(.go)
                         .onSubmit {
-                            submitAddress()
+                            submitAddress(boxes.startPageQuery)
                         }
-                    
-                    if !addressInput.isEmpty {
+
+                    if !boxes.startPageQuery.isEmpty {
                         Button {
-                            submitAddress()
+                            submitAddress(boxes.startPageQuery)
                         } label: {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 24))
@@ -443,18 +481,28 @@ public struct InAppBrowserView: View {
     // MARK: - Direct Safari Search / URL Load
     
     private func loadURL(_ rawURL: String) {
-        addressInput = rawURL
+        boxes.address = rawURL
         withAnimation {
             tabManager.loadURLInActiveTab(rawURL)
         }
     }
     
     private func submitAddress() {
+        submitAddress(boxes.address)
+    }
+
+    /// Opens what the user typed.
+    ///
+    /// The text is taken **first**: giving the keyboard up empties the field,
+    /// and a field that is read after it was emptied opens nothing.
+    private func submitAddress(_ text: String) {
+        guard let trimmed = BrowserAddressBoxes.submitted(text) else { return }
+
         isAddressFieldFocused = false
-        guard !addressInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        
+        isStartPageFieldFocused = false
+
         withAnimation {
-            tabManager.loadURLInActiveTab(addressInput)
+            tabManager.loadURLInActiveTab(trimmed)
         }
     }
     

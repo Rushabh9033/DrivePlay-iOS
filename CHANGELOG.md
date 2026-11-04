@@ -49,13 +49,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   phone now says that the car is waiting, with the button that starts it.
 
 - **The browser tab died and the app went back to the home screen.**
-  Two loops: a page whose web process died was reloaded **unconditionally**,
-  so the page that killed the process was loaded again, killed it again, and
-  the app was taken down with it — and the phone's browser tab had no handler
-  at all, so a dead page stayed dead. Now a page is reloaded **once**; a page
-  that dies twice says so and stops. The car's browser also no longer builds
-  its result list again for **every keystroke** — the list is built once and
-  filtered, so the pictures are not drawn again and again.
+  The **cause** was the ad blocker: it took the rules away and put them back
+  on **every navigation**, on the live web view's content controller. A
+  `WKWebViewConfiguration` is copied when the web view is made, but its
+  `userContentController` is a **shared reference** — so the rule store of
+  the content process was torn down **under the page that was loading**. The
+  device's own log says what that does: the GPU process and every web
+  content process die with `reason=Crash`. The rules are applied **once**
+  now.
+
+  The crash handler then made it worse: it emptied the tab's address, and an
+  empty address **is** the start page — so the page was thrown away and the
+  user was back at the home screen. The address is **kept** now, and the page
+  is reloaded **once**: a reload in a loop loads the page that killed the
+  process again, kills it again, and takes the app down with it.
+
+  The car's browser also no longer builds its result list again for **every
+  keystroke** — the list is built once and filtered, so the pictures are not
+  drawn again and again.
+
+- **Typing in the phone's browser closed it.**
+  The address bar at the bottom and the start page's own search box were
+  **one** text field: what was typed in one of them appeared in the other,
+  and the bar was filled over the text the user had already typed — so the
+  typing looked like it did nothing at all. They are two fields now, each
+  with its own text, and the bar is only filled **while it is empty**.
+
+- **The car's Browser tab was dead.**
+  Its search bar was **presented** with `presentTemplate`, which accepts only
+  an action sheet, an alert and voice control — so the presentation failed
+  every time and the Search button did nothing at all. It is **pushed** onto
+  the stack now. A pushed search template cannot carry a navigation bar
+  button (`CPSearchTemplate` does not conform to `CPBarButtonProviding`), so
+  the way back is a row of the search's own list — *"Back to sites"* and
+  *"Back to channels"*. And the channel search no longer rebuilds thirty rows
+  (and thirty pictures at the car's scale) for **every keystroke**.
+
+- **A page the car asked for never came to the phone.**
+  The car's browser opened the page in the phone's browser tab — and the
+  phone stayed on the tab it was on, because the tab was a `@State` **inside**
+  the view, so nothing outside it could change it. The share the car needs
+  captures **the phone's screen**, so the car was waiting for a share of the
+  wrong screen: the car asked, and neither screen showed anything. The tab is
+  shared now, and a page the car asks for brings the browser to the front.
 
 - **The compass showed the wrong direction.**
   The GPS **course** (the direction of travel — noise while the car is slow)

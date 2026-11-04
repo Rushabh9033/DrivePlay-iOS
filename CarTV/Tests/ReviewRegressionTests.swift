@@ -455,6 +455,66 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertEqual(store.groups.flatMap(\.channels).map(\.name), ["Sky Sports"])
     }
 
+    // MARK: - The browser mechanism
+
+    /// AC155: a dead web process keeps the address the tab was on.
+    ///
+    /// The crash handler used to empty the tab's address, and an empty
+    /// address **is** the start page — so a page whose web process died was
+    /// thrown away and the user was back at the home screen. That is the
+    /// user's *"it crash the browser tab and redirect tom home screen"*.
+    ///
+    /// The address is kept now, and the page is reloaded **once**: a reload in
+    /// a loop loads the page that killed the process again, kills it again,
+    /// and takes the app down with it.
+    @MainActor
+    func test_AC155_a_dead_web_process_keeps_the_address_the_tab_was_on() {
+        // A port nothing listens on: the load fails at once, and no traffic
+        // leaves the phone.
+        let tab = BrowserTabItem(title: "Page", urlString: "https://127.0.0.1/")
+
+        XCTAssertTrue(tab.handleWebProcessDeath(),
+                      "the first death must load the page again")
+        XCTAssertFalse(tab.handleWebProcessDeath(),
+                       "a dead page must not be reloaded in a loop")
+
+        XCTAssertEqual(tab.urlString, "https://127.0.0.1/",
+                       "the tab was sent back to the start page")
+        XCTAssertEqual(tab.title, "The page crashed",
+                       "the tab does not say what happened")
+    }
+
+    /// AC156: the address bar is not filled over what the user typed.
+    ///
+    /// The bar showed the page's address when it gained the focus — over the
+    /// text the user had already typed. The typing then looked like it did
+    /// nothing at all.
+    func test_AC156_the_address_bar_is_not_filled_over_what_the_user_typed() {
+        var boxes = BrowserAddressBoxes()
+        boxes.address = "sky sports"
+
+        boxes.beginEditingAddress(currentURL: "https://example.com/")
+
+        XCTAssertEqual(boxes.address, "sky sports",
+                       "the address bar was filled over the text the user typed")
+    }
+
+    /// AC157: the browser's two search boxes keep their own text.
+    ///
+    /// The address bar at the bottom and the start page's own search box used
+    /// to share **one** piece of state — so what was typed in one of them
+    /// appeared in the other, and the change handlers wiped it.
+    func test_AC157_the_browsers_two_search_boxes_keep_their_own_text() {
+        var boxes = BrowserAddressBoxes()
+        boxes.address = "sky sports"
+        boxes.startPageQuery = "poki"
+
+        XCTAssertEqual(boxes.address, "sky sports",
+                       "the start page's text went into the address bar")
+        XCTAssertEqual(boxes.startPageQuery, "poki",
+                       "the address bar's text went into the start page")
+    }
+
     // MARK: - Helpers
 
     private func channel(_ name: String, group: String = "Sports") -> Channel {
@@ -470,7 +530,7 @@ final class ReviewRegressionTests: XCTestCase {
         func play(channel: Channel) {}
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
         func pushCategories(title: String, categories: [ChannelGroup]) {}
-        func presentSearch() {}
+        func pushChannelSearch() {}
         func togglePicture() {}
         func togglePlayback() {}
         func startScreenShare() {}

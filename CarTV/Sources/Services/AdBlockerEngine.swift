@@ -295,11 +295,50 @@ public final class AdBlockerEngine: ObservableObject {
         return rules
     }
 
-    /// Applies content rules to a web view configuration
-    public func apply(to configuration: WKWebViewConfiguration) {
-        configuration.userContentController.removeAllContentRuleLists()
-        guard let ruleList = ruleListToApply else { return }
-        configuration.userContentController.add(ruleList)
+    /// What a content controller was last given — `nil` when it was given
+    /// none.
+    private final class AppliedRules {
+        let list: WKContentRuleList?
+        init(_ list: WKContentRuleList?) { self.list = list }
+    }
+
+    /// What each content controller already carries.
+    ///
+    /// The controller is the key and it is held **weakly** — a closed tab's
+    /// controller must not be kept alive by the blocker.
+    private var appliedRules = NSMapTable<WKUserContentController, AppliedRules>(
+        keyOptions: .weakMemory, valueOptions: .strongMemory)
+
+    /// Applies content rules to a web view configuration.
+    ///
+    /// **It does nothing when the controller already carries the rules.**
+    ///
+    /// The rules are applied to the **next** load, and a web view's
+    /// `userContentController` is a *shared* reference — so taking the rules
+    /// away and putting them back while a page is loading tears the content
+    /// process's rule store down under it. The device's own log shows what
+    /// that does: the WebKit **GPU process** and three **web content
+    /// processes** die with `reason=Crash`, and the tab that was showing the
+    /// page is sent back to the start page.
+    ///
+    /// So the rules are taken **once**, and a navigation that changes nothing
+    /// changes nothing here.
+    ///
+    /// - Returns: `true` when the controller was changed — the caller has to
+    ///   load the page again for the change to be seen.
+    @discardableResult
+    public func apply(to configuration: WKWebViewConfiguration) -> Bool {
+        let controller = configuration.userContentController
+        let wanted = ruleListToApply
+        if let known = appliedRules.object(forKey: controller), known.list === wanted {
+            return false
+        }
+        controller.removeAllContentRuleLists()
+        if let wanted {
+            controller.add(wanted)
+        }
+        appliedRules.setObject(AppliedRules(wanted), forKey: controller)
+        return true
     }
 
     /// The rule list the blocker hands to a web view — `nil` when it is
@@ -316,8 +355,13 @@ public final class AdBlockerEngine: ObservableObject {
     /// compile, not before it.
     public func applyToAllOpenTabs() {
         for tab in BrowserTabManager.shared.tabs {
-            apply(to: tab.webView.configuration)
-            tab.reload()
+            // The rules apply to the **next** load, so a tab that was given
+            // new rules is loaded again — and a tab that was given the same
+            // rules is left alone. Reloading every tab for nothing is what
+            // used to take the pages down.
+            if apply(to: tab.webView.configuration) {
+                tab.reload()
+            }
         }
     }
 

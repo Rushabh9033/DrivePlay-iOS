@@ -172,7 +172,7 @@ final class CarPlayTabTests: XCTestCase {
         func play(channel: Channel) { played.append(channel.name) }
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
         func pushCategories(title: String, categories: [ChannelGroup]) { pushedCategories.append((title, categories)) }
-        func presentSearch() {}
+        func pushChannelSearch() {}
         func togglePicture() { pictureToggled = true }
         func togglePlayback() { playbackToggled = true }
         func startScreenShare() { shareStarted = true }
@@ -451,7 +451,9 @@ final class CarPlayTabTests: XCTestCase {
 
         var results: [CPListItem] = []
         browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "sky sports") { results = $0 }
-        guard let row = results.first else {
+        // The row is looked up **by its text**, never by its position: the
+        // search's own list carries the way back as its first row.
+        guard let row = results.first(where: { $0.text == "Open \"sky sports\"" }) else {
             XCTFail("the browser's search bar found nothing")
             return
         }
@@ -850,9 +852,12 @@ final class CarPlaySearchTests: XCTestCase {
         delegate.searchTemplate(CPSearchTemplate(), updatedSearchText: "sky") { items in
             results = items
         }
-        XCTAssertEqual(results.count, 1, "the search did not find the channel")
+        // The row is looked up **by its text**, never by its position: the
+        // search's own list carries the way back as its first row.
+        let row = results.first { $0.text == "Sky Sports HD" }
+        XCTAssertNotNil(row, "the search did not find the channel")
 
-        delegate.searchTemplate(CPSearchTemplate(), selectedResult: results[0]) {}
+        delegate.searchTemplate(CPSearchTemplate(), selectedResult: row!) {}
 
         XCTAssertEqual(PlaybackManager.shared.currentChannel?.id, sky.id,
                        "the selected search result did not play its channel")
@@ -879,6 +884,72 @@ final class CarPlaySearchTests: XCTestCase {
                       "the row was built again, so its picture was drawn again")
     }
 
+    /// AC153: the channel search does not build its rows again for every
+    /// keystroke.
+    ///
+    /// `searchTemplate(_:updatedSearchText:completionHandler:)` is called on
+    /// **every character**, and every row carries a picture at the car's
+    /// scale — so a row that is built again is a picture that is drawn again.
+    /// Thirty of those per keystroke is what took the CarPlay session down.
+    func test_AC153_the_channel_search_does_not_build_its_rows_again_for_every_keystroke() {
+        let store = PlaylistStore.shared
+        let originalChannels = store.channels
+        defer {
+            store.channels = originalChannels
+            store.rebuildIndex()
+        }
+
+        let missing = URL(fileURLWithPath: "/tmp/driveplay-no-such-stream.m3u8")
+        let sky = Channel(name: "Sky Sports HD", streamURL: missing, groupTitle: "Sports")
+        let news = Channel(name: "BBC News", streamURL: missing, groupTitle: "News")
+        store.channels = [sky, news]
+        store.rebuildIndex()
+
+        let delegate = CarPlaySceneDelegate()
+        var first: [CPListItem] = []
+        delegate.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { first = $0 }
+        var second: [CPListItem] = []
+        delegate.searchTemplate(CPSearchTemplate(), updatedSearchText: "s") { second = $0 }
+
+        let skyFirst = first.first { $0.text == "Sky Sports HD" }
+        let skySecond = second.first { $0.text == "Sky Sports HD" }
+        XCTAssertNotNil(skyFirst, "the search did not offer the channel")
+        XCTAssertNotNil(skySecond, "the search did not offer the channel for the typed text")
+        XCTAssertTrue(skyFirst === skySecond,
+                      "the row was built again, so its picture was drawn again")
+    }
+
+    /// AC154: the address bar has a way back to the list it was pushed from.
+    ///
+    /// A `CPSearchTemplate` does not conform to `CPBarButtonProviding` — it
+    /// cannot carry a navigation bar button — so the way back has to be a row
+    /// of the search's own list. Without one the car is stuck on the address
+    /// bar for ever.
+    func test_AC154_the_address_bar_has_a_way_back_to_the_sites() {
+        let browser = CarPlayBrowserSearch()
+        var opened: [String] = []
+        browser.openAddress = { opened.append($0) }
+        var dismissed = false
+        browser.dismissAddressBar = { dismissed = true }
+
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
+
+        let back = results.first { $0.text == "Back to sites" }
+        XCTAssertNotNil(back, "the address bar has no way back to the sites")
+
+        // Typing must not take the way out away.
+        var typed: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "you") { typed = $0 }
+        XCTAssertNotNil(typed.first { $0.text == "Back to sites" },
+                        "the way back is gone while the user is typing")
+
+        browser.searchTemplate(CPSearchTemplate(), selectedResult: back!) {}
+
+        XCTAssertTrue(dismissed, "the way back did not take the car out of the address bar")
+        XCTAssertTrue(opened.isEmpty, "the way back opened a page")
+    }
+
     /// AC142: the phone is told that the car is waiting for the page.
     ///
     /// CarPlay has no web view of its own, so a page the user opens on the car
@@ -895,6 +966,26 @@ final class CarPlaySearchTests: XCTestCase {
                        "the phone has to say that the car is waiting for the page")
         XCTAssertTrue(share.isWaitingForBroadcast,
                       "the relay has to be listening before the user picks the broadcast")
+    }
+
+    /// AC158: a page the **car** asks for comes to the phone.
+    ///
+    /// The share the car needs captures **the phone's screen** — so the page
+    /// has to be *on* the screen. The tab used to be a `@State` inside the
+    /// view, so nothing outside it could bring the browser forward: the car
+    /// asked, the page opened on a tab the user was not looking at, and
+    /// neither screen showed anything.
+    func test_AC158_a_page_the_car_asks_for_comes_to_the_phone() {
+        let share = ScreenShareService(relay: ScreenRelayListener(port: 47414))
+        defer { share.stopRelay() }
+
+        let tabs = AppTabSelection.shared
+        tabs.tab = .home
+
+        share.carRequestedPage("https://m.youtube.com")
+
+        XCTAssertEqual(tabs.tab, .browser,
+                       "the phone did not come to the browser tab — the car would share the wrong screen")
     }
 }
 

@@ -301,6 +301,13 @@ arrives as a string *and* as a list. A refused account is now refused by name
 | 149 | The compass **says whether it is sure** of the heading | `SatelliteHUDTests` |
 | 150 | The screen stream's **token is 128 bits wide and one unbroken string** — it is the only thing that keeps the phone's screen off the rest of the network, and it rides in a URL path and in the relay's announcement, so it is hex that never needs escaping | `CredentialStorageTests` |
 | 151 | A URL that carries a password is **not written to the log** as it is — the log keeps the host and the file name | `CredentialStorageTests` |
+| 152 | The ad blocker's rules are applied **once** — taking them away and putting them back on every navigation tears the content process's rule store down under the page that is loading | `AdBlockerTests` |
+| 153 | The car's channel search does **not** build its rows again for every keystroke — a row that is built again is a picture that is drawn again, at the car's scale | `CarPlaySearchTests` |
+| 154 | The car's address bar has a **way back** to the list it was pushed from — a `CPSearchTemplate` cannot carry a navigation bar button, so the way back is a row of its own list | `CarPlaySearchTests` |
+| 155 | A page whose web process died **keeps its address** — the tab is not sent back to the start page, and the page is reloaded once and not in a loop | `ReviewRegressionTests` |
+| 156 | The address bar is **not filled over** what the user has typed | `ReviewRegressionTests` |
+| 157 | The browser's two search boxes keep **their own text** — the address bar and the start page's own box are two fields, not one | `ReviewRegressionTests` |
+| 158 | A page the **car** asks for comes to the phone — the share captures the phone's screen, so the page has to be on it | `CarPlaySearchTests` |
 
 ## Verification
 
