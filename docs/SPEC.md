@@ -260,6 +260,7 @@ must not be cropped away (AC118).
 | 130 | A resource that says nothing about itself is the server only when it answers on a port | `PlexTests` |
 | 131 | The relay address of a server is asked for — `includeRelay=1` | `PlexTests` |
 | 132 | A refused account is not reported as an account without a server | `PlexTests` |
+| 133 | A site name is a host name — a glob character is never accepted as an exemption | `AdBlockerTests` |
 
 ## Verification
 

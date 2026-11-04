@@ -35,7 +35,13 @@ public final class AdBlockerEngine: ObservableObject {
         if UserDefaults.standard.object(forKey: Self.enabledKey) != nil {
             isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
         }
-        exemptSites = Set(UserDefaults.standard.stringArray(forKey: Self.exemptSitesKey) ?? [])
+        // A stored exemption that is not a plain host name is thrown away:
+        // it would widen the exemption to hosts it was never meant to cover.
+        let stored = Set(UserDefaults.standard.stringArray(forKey: Self.exemptSitesKey) ?? [])
+        exemptSites = stored.filter { Self.isPlainHost($0) }
+        if exemptSites != stored {
+            UserDefaults.standard.set(Array(exemptSites).sorted(), forKey: Self.exemptSitesKey)
+        }
         loadOrCompileRules()
     }
 
@@ -294,9 +300,42 @@ public final class AdBlockerEngine: ObservableObject {
     // MARK: - Letting a site through
 
     /// The host of a URL without its `www.` — the key a site is remembered by.
+    ///
+    /// `nil` for a host that is not a plain host name: an exemption is used
+    /// in a **glob**, and a glob character in a host would widen the
+    /// exemption to hosts it was never meant to cover.
     public static func siteKey(for url: URL) -> String? {
         guard let host = url.host?.lowercased(), !host.isEmpty else { return nil }
-        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        var site = host
+        if host.hasPrefix("www.") {
+            // Only when what is left is still a site of its own: `www.com` is
+            // a host, and stripping its `www.` would leave `com` — and an
+            // exemption for `com` covers **every** `.com` host.
+            let rest = String(host.dropFirst(4))
+            if rest.contains(".") { site = rest }
+        }
+        return isPlainHost(site) ? site : nil
+    }
+
+    /// Whether a string is a plain host name — letters, digits, dashes and
+    /// dots, and nothing else.
+    ///
+    /// The exemption ends up in the rule as `*://<site>/*`, and `if-top-url`
+    /// only knows globs. A `*` or a `?` in the site would therefore match
+    /// **other** hosts as well — `*.com` would let every site through — so a
+    /// site that is not a plain host name is never accepted.
+    static func isPlainHost(_ site: String) -> Bool {
+        guard !site.isEmpty, site.count <= 253 else { return false }
+        let labels = site.split(separator: ".", omittingEmptySubsequences: false)
+        guard !labels.isEmpty else { return false }
+        for label in labels {
+            guard !label.isEmpty,
+                  label.count <= 63,
+                  label.first != "-", label.last != "-",
+                  label.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") })
+            else { return false }
+        }
+        return true
     }
 
     /// Whether the blocker lets this site through.
@@ -309,6 +348,10 @@ public final class AdBlockerEngine: ObservableObject {
     /// The rules are compiled again, because the exemption has to be the
     /// **last** rule to win over the block rules.
     public func setExempt(_ exempt: Bool, for site: String) {
+        guard Self.isPlainHost(site) else {
+            print("[AdBlockerEngine] Not a host name, so not an exemption: \(site)")
+            return
+        }
         if exempt {
             guard !exemptSites.contains(site) else { return }
             exemptSites.insert(site)

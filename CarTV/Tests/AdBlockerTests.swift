@@ -147,6 +147,10 @@ final class AdBlockerTests: XCTestCase {
         XCTAssertEqual(AdBlockerEngine.siteKey(for: URL(string: "https://sonyliv.com")!), "sonyliv.com")
         XCTAssertEqual(AdBlockerEngine.siteKey(for: URL(string: "https://WWW.SonyLIV.com/x")!), "sonyliv.com")
         XCTAssertNil(AdBlockerEngine.siteKey(for: URL(string: "about:blank")!))
+
+        // `www.com` is a host of its own — stripping its `www.` would leave
+        // `com`, and an exemption for `com` covers every `.com` host.
+        XCTAssertEqual(AdBlockerEngine.siteKey(for: URL(string: "https://www.com/x")!), "www.com")
     }
 
     /// AC125: the exemption is remembered, and the blocker can be switched
@@ -206,6 +210,43 @@ final class AdBlockerTests: XCTestCase {
 
         XCTAssertFalse(Self.blocked(rules, by: tagManager),
                        "the site's own tag manager is blocked")
+    }
+
+    /// AC133: **a site name is a host name, and nothing else.**
+    ///
+    /// An exemption ends up in the rule as a **glob** (`*://<site>/*`), and
+    /// `if-top-url` only knows globs — so a `*` or a `?` in the site would
+    /// match **other** hosts as well. `*.com` would let every site through.
+    func test_AC133_a_site_name_is_a_host_name_and_nothing_else() {
+        // The hosts that are real.
+        XCTAssertTrue(AdBlockerEngine.isPlainHost("sonyliv.com"))
+        XCTAssertTrue(AdBlockerEngine.isPlainHost("192.168.1.10"))
+        XCTAssertTrue(AdBlockerEngine.isPlainHost("my-site.example.co.uk"))
+
+        // The ones that are not: a glob character, a path, a port, a space.
+        for bad in ["*", "*.com", "sonyliv.*", "sonyliv.com?", "sonyliv.com/x",
+                    "sonyliv.com:443", "sonyliv com", "", ".com", "sonyliv..com",
+                    "-sonyliv.com", "sonyliv-.com"] {
+            XCTAssertFalse(AdBlockerEngine.isPlainHost(bad), "\(bad) is accepted as a site")
+        }
+
+        // And the key of a URL is refused when the host is not a plain host.
+        XCTAssertNil(AdBlockerEngine.siteKey(for: URL(string: "https://*.evil.com/x")!))
+    }
+
+    /// AC133: **an exemption that is not a host name is refused**, and the
+    /// one that is stored is not honoured either.
+    func test_AC133_an_exemption_that_is_not_a_host_name_is_refused() {
+        let engine = AdBlockerEngine.shared
+        let before = engine.exemptSites
+        defer {
+            for site in engine.exemptSites.subtracting(before) { engine.setExempt(false, for: site) }
+            for site in before.subtracting(engine.exemptSites) { engine.setExempt(true, for: site) }
+        }
+
+        engine.setExempt(true, for: "*.com")
+        XCTAssertFalse(engine.isExempt("*.com"), "a glob was accepted as a site")
+        XCTAssertFalse(engine.exemptSites.contains("*.com"))
     }
 
     // MARK: - WebKit's matching, in as few lines as it takes

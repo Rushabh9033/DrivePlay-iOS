@@ -12,10 +12,10 @@
 
 **No rule ever matched the reCAPTCHA addresses.** Checked against the exact
 rules that were on the phone: `enterprise.js`, `api2/anchor`, `api2/bframe`
-and `gstatic` were **allowed** by all 237 rules, and no pattern in the list
-contains the word *"captcha"*. A real `WKWebView` on Google's reCAPTCHA demo
-page, with the app's compiled rules applied, still had `window.grecaptcha` as
-an **object** — the same as the run without them.
+and `gstatic` were **allowed** by all 237 host patterns, and no pattern in the
+list contains the word *"captcha"*. A real `WKWebView` on Google's reCAPTCHA
+demo page, with the app's compiled rules applied, still had `window.grecaptcha`
+as an **object** — the same as the run without them.
 
 So the captcha was not blocked. The **page** was broken by four other things,
 and every one of them was real:
@@ -110,6 +110,7 @@ account"*. One message, **four** different failures:
 | 124 | The site's key is its host without `www.` | `AdBlockerTests` |
 | 125 | The exemption is remembered; the blocker can be switched off | `AdBlockerTests` |
 | 126 | The tag manager is not blocked | `AdBlockerTests` |
+| 133 | A site name is a host name — a glob character is never accepted as an exemption | `AdBlockerTests` |
 | 127 | One odd device does not empty the list | `PlexTests` |
 | 128 | `provides` reads as a string and as a list | `PlexTests` |
 | 129 | The account's own phone is not the media server | `PlexTests` |
@@ -144,6 +145,11 @@ frame.
   a third-party frame.
 - **`ignore-previous-rules` has to come last** — it cancels the rules before
   it. That is how an exemption is a rule and not a flag.
+- **An exemption is a glob, so a site name has to be a host name.**
+  `URL(string: "https://*.evil.com/x")` parses and its host is `*.evil.com`;
+  `https://*/` parses too. Written into `*://<site>/*` as it is, such a site
+  would let **every** site through — so the name is accepted only when it is
+  letters, digits, dashes and dots.
 - **The compiled rule list is cached under its identifier.** Bump it with the
   rules, or the new rules are never compiled.
 - **Compiling again under the *same* identifier does replace the rules** —

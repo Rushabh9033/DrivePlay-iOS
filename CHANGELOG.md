@@ -41,6 +41,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the page was loaded with the *old* rules and the switch looked like it had
   done nothing.
 
+  A site's name is checked before it is used: an exemption ends up in the
+  rule as a **glob**, so a host with a `*` in it (`https://*/` is a URL that
+  parses) would have let **every** site through.
+
 - **"No Plex media server found on this account" — whatever the real problem
   was.** The one message was used for four different failures. Now:
 

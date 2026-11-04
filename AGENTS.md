@@ -700,6 +700,13 @@ it is set in `project.yml`.
 - **`ignore-previous-rules` has to come **last**, and it cancels the rules
   before it.** That is how a site the user let through is left alone — the
   exemption is a rule, not a flag.
+- **An exemption is a glob, so a site name has to be a host name.**
+  `if-top-url` only knows globs, and the exemption is written as
+  `*://<site>/*` — so a site carrying a `*` matches **other** hosts too.
+  `URL(string: "https://*.evil.com/x")` parses and its host is `*.evil.com`,
+  and `https://*/` parses too: without a check on the site name, opening
+  such a URL in the app's browser would let **every** site through. The site
+  name is accepted only when it is letters, digits, dashes and dots.
 - **The compiled rule list is cached under its identifier.** WebKit keeps it, and
   the app asks for it *by name* before it compiles anything — so a list compiled
   from the **old** rules is found and used, and the new rules are **never
