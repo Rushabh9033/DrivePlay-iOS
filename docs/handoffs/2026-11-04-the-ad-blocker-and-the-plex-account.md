@@ -18,36 +18,50 @@ demo page, with the app's compiled rules applied, still had `window.grecaptcha`
 as an **object** — the same as the run without them.
 
 So the captcha was not blocked. The **page** was broken by four other things,
-and every one of them was real:
+and every one of them was real. Every statement below was **measured**
+against a real `WKWebView` on a local server — the first version of this fix
+was written from the *documentation* and was wrong in three places:
 
-1. **A rule matched the whole URL — the query string included.**
-   `url-filter` is a regex searched *anywhere* in the URL, so the rule for
-   `googletagmanager.com` also stopped
-   `https://www.google.com/ccm/collect?…&scrsrc=www.googletagmanager.com` —
-   **Google's own collector**, killed by a host it only *mentioned*. The rules
-   took **33 of the SonyLIV sign-in page's 93 resources** that way. The rules
-   now match the **host** of a request (`if-domain`) and nothing else. (AC121)
+1. **The block rules never stopped an ad at all.**
+   They named the ad hosts with `if-domain`, and `if-domain` reads the **top
+   document's** host — not the host of the request. Measured: a rule for the
+   host of an image never stopped that image, and a rule for the host of the
+   *page* stopped the whole page. The rules now match the **host of the
+   request** with a filter that is anchored to it —
+   `^https?://([^/]+\.)?<host>(:[0-9]+)?/` — so a host that is only *mentioned*
+   later in the URL (a path, a query) can never match. That is what stops
+   Google's own collector, which carries `&scrsrc=www.googletagmanager.com` in
+   its query string. (AC120, AC121)
 2. **The rule that hides the ad boxes ran on every frame.**
    A captcha badge, a payment form and a consent banner all live in a
-   **third-party frame**. The rule is now `load-type: ["top-frame"]` only, and
-   it excepts the captcha and identity providers with `unless-domain`. (AC122)
-3. **There was no way out.** `isEnabled` existed and was **never read** — the
+   **third-party frame**. The rule is now `load-type: ["first-party"]` — the
+   page itself and nothing else — and it excepts the captcha and identity
+   providers with `unless-domain`. (AC122)
+3. **The whole rule list did not compile.**
+   WebKit compiles the list as **one** thing, and one value it does not know
+   kills **every** rule: `"top-frame"` is not a load type (`"first-party"` and
+   `"third-party"` are the only two), and a glob that starts with `*://` is
+   refused outright (*"Internal error in YARR"*). The list was therefore
+   **dead** and the blocker did nothing. A test now compiles the list the app
+   really hands over and fails when WebKit refuses it. (AC134)
+4. **There was no way out.** `isEnabled` existed and was **never read** — the
    "Ad Shield" sheet was a read-only notice. It is a real control now: a
    master switch and a **per-site switch** (an `ignore-previous-rules` rule
    that comes **last**, so it wins). (AC123–AC125)
-4. **The tag manager was blocked.** `googletagmanager.com` is not an ad host —
-   it is the pipe a site's **own** configuration travels through, and
-   SonyLIV's sign-in page took its login-and-tray setup from there. It is not
-   blocked any more; the ad hosts it fires at (DoubleClick, Google Ads, Google
-   Analytics) are blocked on their own. (AC126)
 
-A fifth thing was found on the way: **the compiled rule list is cached under
+And a fifth: **the tag manager was blocked.** `googletagmanager.com` is not an
+ad host — it is the pipe a site's **own** configuration travels through, and
+SonyLIV's sign-in page took its login-and-tray setup from there. It is not
+blocked any more; the ad hosts it fires at (DoubleClick, Google Ads, Google
+Analytics) are blocked on their own. (AC126)
+
+A sixth thing was found on the way: **the compiled rule list is cached under
 its identifier.** WebKit keeps it and the app asks for it *by name* before it
 compiles anything, so a list compiled from the **old** rules was found and
 used and the new rules were **never even compiled**. The identifier is now
-`DrivePlayAdBlockerRulesV7`.
+`DrivePlayAdBlockerRulesV8`.
 
-And a sixth: **the rules apply to the *next* load, and they are compiled in
+And a seventh: **the rules apply to the *next* load, and they are compiled in
 the background.** The browser reloaded the page the moment the switch was
 flipped — with the *old* rules — and the switch looked like it had done
 nothing. The pages are now loaded again **after** the compile, by the one
@@ -111,6 +125,7 @@ account"*. One message, **four** different failures:
 | 125 | The exemption is remembered; the blocker can be switched off | `AdBlockerTests` |
 | 126 | The tag manager is not blocked | `AdBlockerTests` |
 | 133 | A site name is a host name — a glob character is never accepted as an exemption | `AdBlockerTests` |
+| 134 | **The whole rule list compiles** — WebKit is asked, not simulated | `AdBlockerTests` |
 | 127 | One odd device does not empty the list | `PlexTests` |
 | 128 | `provides` reads as a string and as a list | `PlexTests` |
 | 129 | The account's own phone is not the media server | `PlexTests` |
@@ -118,38 +133,49 @@ account"*. One message, **four** different failures:
 | 131 | The relay address is asked for | `PlexTests` |
 | 132 | A refused account is not reported as an account without a server | `PlexTests` |
 
-The rule-matching in `AdBlockerTests` is a **faithful simulation of WebKit's**:
-the rules are read in order, `ignore-previous-rules` cancels everything before
-it, `if-domain`/`unless-domain` read the **host** (and the hosts under it),
-`if-top-url` is a glob and `load-type: ["top-frame"]` only matches the top
-frame.
+The rule-matching in `AdBlockerTests` is a **faithful simulation of WebKit's** —
+of what was **measured**, not of what the documentation says: the rules are
+read in order, `ignore-previous-rules` cancels everything before it,
+`if-domain`/`unless-domain` read the **top document's** host and match it
+**exactly**, and `load-type` knows `"first-party"` (the page's own origin) and
+`"third-party"` (everything else) — and nothing else.
+
+**AC134 does not simulate anything.** It hands the list the app really
+produces to `WKContentRuleListStore.compileContentRuleList` and fails when
+WebKit refuses it. A simulation cannot see a value WebKit does not know, and
+that is exactly what killed the blocker.
 
 ## Files touched
 
 | File | What changed |
 |------|--------------|
-| `CarTV/Sources/Services/AdBlockerEngine.swift` | `makeRules(exemptSites:)` made **pure** and testable; `if-domain` host matching; the CSS rule is `top-frame`; the tag manager unblocked; `ruleListToApply`, `apply(to:)`, `applyToAllOpenTabs()`, `siteKey(for:)`, `isExempt(_:)`, `setExempt(_:for:)`, `setEnabled(_:)`; the identifier is now `DrivePlayAdBlockerRulesV7` |
+| `CarTV/Sources/Services/AdBlockerEngine.swift` | `makeRules(exemptSites:)` made **pure** and testable; the block rules match the **host of the request** (`url-filter` anchored to it); the CSS rule is `load-type: ["first-party"]`; the exemption is `if-domain`; the tag manager unblocked; `ruleListToApply`, `apply(to:)`, `applyToAllOpenTabs()`, `siteKey(for:)`, `hostVariants(_:)`, `isExempt(_:)`, `setExempt(_:for:)`, `setEnabled(_:)`; the identifier is now `DrivePlayAdBlockerRulesV8` |
 | `CarTV/Sources/Services/PlexClient.swift` | `PlexError.noMediaServer` / `.refused(status:)` / `.unreadableAnswer`; `resourcesURL` with `includeRelay=1`; lenient decoding of the resources; the status is read before the body; `preferredServer(in:)` |
 | `CarTV/Sources/Views/Settings/AddSourceSheet.swift` | the message comes from the error, not from a fixed string |
 | `CarTV/Sources/Views/Browser/InAppBrowserView.swift` | the "Ad Shield" sheet: a master switch and a per-site switch |
-| `CarTV/Tests/AdBlockerTests.swift` | **new** — AC119–AC126 |
+| `CarTV/Tests/AdBlockerTests.swift` | **new** — AC119–AC126, AC133, AC134 |
 | `CarTV/Tests/PlexTests.swift` | **new** — AC127–AC132 |
 | `docs/SPEC.md`, `CHANGELOG.md`, `AGENTS.md`, `docs/review-2026-11-03.md` | this pass |
 
 ## Gotchas learned
 
-- **A content blocker's `url-filter` matches the whole URL.** A host that is
-  only *mentioned* in a query string is not a host that is *called* — use
-  `if-domain`.
-- **The CSS rule of a blocker has to be `top-frame`.** A captcha badge lives in
-  a third-party frame.
+- **A content blocker's `url-filter` matches the whole URL.** Anchor it to the
+  host of the request: `^https?://([^/]+\.)?<host>(:[0-9]+)?/`. A host that is
+  only *mentioned* in a path or a query is not a host that is *called*.
+- **`if-domain` is the top document's host, matched exactly.** Not the host of
+  the request, and not "the host or a host under it" — so a block rule that
+  names an ad host with `if-domain` never stops that ad. It is the right tool
+  for an exemption.
+- **WebKit knows two load types: `"first-party"` and `"third-party"`.** Any
+  other value fails the compilation of the **whole** list.
+- **`if-top-url` needs a literal scheme.** `*://site/*` does not compile
+  (*"Internal error in YARR"*) — the exemption uses `if-domain` instead.
 - **`ignore-previous-rules` has to come last** — it cancels the rules before
   it. That is how an exemption is a rule and not a flag.
-- **An exemption is a glob, so a site name has to be a host name.**
+- **A site name has to be a host name.**
   `URL(string: "https://*.evil.com/x")` parses and its host is `*.evil.com`;
-  `https://*/` parses too. Written into `*://<site>/*` as it is, such a site
-  would let **every** site through — so the name is accepted only when it is
-  letters, digits, dashes and dots.
+  `https://*/` parses too. Such a name would let **every** site through — so
+  it is accepted only when it is letters, digits, dashes and dots.
 - **The compiled rule list is cached under its identifier.** Bump it with the
   rules, or the new rules are never compiled.
 - **Compiling again under the *same* identifier does replace the rules** —
@@ -164,6 +190,8 @@ frame.
   `userContentController` is a shared reference** — a rule list added later
   reaches the open web view on the **next** load, so the page must be
   reloaded.
+- **Compile the real rule list in a test.** The list is one thing to WebKit,
+  and a test that *simulates* the matching cannot see that.
 - **A tag manager is not an ad host.** It is the site's own plumbing.
 - **plex.tv answers `provides` both as a string and as a list.**
 - **`(try? decode) ?? []` turns every error into "no servers".**

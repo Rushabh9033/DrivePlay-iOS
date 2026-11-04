@@ -124,6 +124,28 @@ with a black bar on **both** sides. A portrait video now fills the frame, a
 landscape one keeps its edges — a channel's logo at the edge of the picture
 must not be cropped away (AC118).
 
+The **twelfth pass** (2026-11-04) is the app's **browser** and the **Plex
+account**. The ad blocker broke the sign-in of the sites that use a captcha,
+and the truth is not what the first fix assumed: **no rule ever matched the
+reCAPTCHA addresses** — they were allowed through all along. The page broke
+because the block rules named the ad hosts with `if-domain`, and `if-domain`
+reads the **top document's** host, not the host of the request, so they never
+stopped an ad on a real page at all; because the rule that hides the ad boxes
+ran on **every frame**, where a captcha badge lives; and because WebKit
+compiles the rule list as **one** thing, so a single value it does not know
+(`load-type: ["top-frame"]`) left the whole list dead. The rules now match the
+**host of the request** with a filter that is anchored to it (AC120, AC121),
+the CSS rule runs on the page alone (AC122), and a test asks **WebKit** to
+compile the list the app really hands over instead of simulating it (AC134).
+The blocker is a real control as well: a master switch and a per-site switch,
+so a site that needs a captcha to log in can be let through (AC123–AC125).
+
+*"No Plex media server found on this account"* was used for **four** different
+failures: the relay address was never asked for, a decode error was reported
+as an empty account, one odd device emptied the whole list, and `provides`
+arrives as a string *and* as a list. A refused account is now refused by name
+(AC127–AC132).
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -261,6 +283,7 @@ must not be cropped away (AC118).
 | 131 | The relay address of a server is asked for — `includeRelay=1` | `PlexTests` |
 | 132 | A refused account is not reported as an account without a server | `PlexTests` |
 | 133 | A site name is a host name — a glob character is never accepted as an exemption | `AdBlockerTests` |
+| 134 | **The whole rule list compiles** — WebKit is asked, not simulated | `AdBlockerTests` |
 
 ## Verification
 

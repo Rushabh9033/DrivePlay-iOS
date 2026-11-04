@@ -5,16 +5,21 @@ import WebKit
 /// The ad blocker must not break the login a user came for.
 ///
 /// The truth about the SonyLIV captcha: **no rule ever matched the
-/// reCAPTCHA URLs**. The rules broke the page in three other ways, and these
-/// tests pin all three:
+/// reCAPTCHA URLs**. The rules broke the page in five other ways, and these
+/// tests pin every one of them:
 ///
 /// 1. a `url-filter` matches the **whole URL**, so a page that merely
 ///    *mentioned* a blocked host in its query string had its own request
 ///    blocked (`&scrsrc=www.googletagmanager.com`);
-/// 2. the CSS rule ran on **every page and every frame**, so it could hide a
-///    captcha badge — a captcha lives in a third-party frame;
-/// 3. there was **no way out**: `isEnabled` was never read, so the user could
-///    not let one site through.
+/// 2. the CSS rule ran on **every frame**, so it could hide a captcha badge —
+///    a captcha lives in a third-party frame;
+/// 3. the block rules named the ad hosts with `if-domain`, which reads the
+///    **top document's** host and not the host of the request — so they
+///    never stopped an ad on a real page at all;
+/// 4. there was **no way out**: `isEnabled` was never read, so the user could
+///    not let one site through;
+/// 5. WebKit compiles the list as **one** thing, so a single value it does
+///    not know (`load-type: ["top-frame"]`) killed the **whole** list.
 @MainActor
 final class AdBlockerTests: XCTestCase {
 
@@ -59,7 +64,10 @@ final class AdBlockerTests: XCTestCase {
     /// AC120: the ad hosts are still stopped.
     ///
     /// The captcha has to get through, but the ads must not: a blocker that
-    /// lets everything through is not a blocker.
+    /// lets everything through is not a blocker. The rules name the ad hosts
+    /// with a filter that is anchored to the **host of the request**, because
+    /// `if-domain` reads the host of the *page* — a rule for the host of an
+    /// image never stopped that image.
     func test_AC120_the_ad_hosts_are_still_stopped() {
         let rules = AdBlockerEngine.makeRules(exemptSites: [])
 
@@ -83,6 +91,12 @@ final class AdBlockerTests: XCTestCase {
 
         XCTAssertFalse(Self.blocked(rules, by: collector),
                        "a page's own request was stopped by a host it only mentions")
+
+        // The same in a path — the filter is anchored to the host, so
+        // nothing after the host can ever match.
+        let inPath = URL(string: "https://www.google.com/collect/doubleclick.net.gif")!
+        XCTAssertFalse(Self.blocked(rules, by: inPath),
+                       "a page's own request was stopped by a host it only mentions")
     }
 
     /// AC122: the CSS rule hides the ad boxes of the **page** and nothing
@@ -90,28 +104,38 @@ final class AdBlockerTests: XCTestCase {
     ///
     /// It used to run on every frame, so it could hide a captcha badge — and
     /// a captcha badge lives in a third-party frame. The rule is now
-    /// `top-frame` only, and it excepts the captcha and identity providers
-    /// even on the page itself.
+    /// `load-type: ["first-party"]`, which is the page itself and nothing
+    /// else (`"top-frame"` is not a load type WebKit knows — one value it
+    /// does not know and the whole list is dead), and it excepts the captcha
+    /// and identity providers even on the page itself.
     func test_AC122_the_css_rule_stays_out_of_every_frame() {
         let rules = AdBlockerEngine.makeRules(exemptSites: [])
         let cssRules = rules.filter { ($0["action"] as? [String: Any])?["type"] as? String == "css-display-none" }
         XCTAssertEqual(cssRules.count, 1, "there is exactly one CSS rule")
 
         let trigger = cssRules[0]["trigger"] as? [String: Any]
-        XCTAssertEqual(trigger?["load-type"] as? [String], ["top-frame"],
+        XCTAssertEqual(trigger?["load-type"] as? [String], ["first-party"],
                        "the CSS rule must not reach into a frame")
 
         let excepted = trigger?["unless-domain"] as? [String] ?? []
         for domain in ["google.com", "gstatic.com", "recaptcha.net", "hcaptcha.com",
-                       "cloudflare.com", "arkoselabs.com", "funcaptcha.com"] {
+                       "cloudflare.com", "arkoselabs.com", "funcaptcha.com", "sonyliv.com"] {
             XCTAssertTrue(excepted.contains(domain), "\(domain) is not protected")
         }
+        // `unless-domain` matches the **top document's** host exactly, so the
+        // `www.` twin has to be named as well.
+        XCTAssertTrue(excepted.contains("www.sonyliv.com"),
+                      "www.sonyliv.com is not protected")
 
         // A captcha in a frame of the page: the CSS rule must not touch it.
         let badge = URL(string: "https://www.google.com/recaptcha/api2/bframe?k=abc")!
         let page = URL(string: "https://www.sonyliv.com/account/signin")!
         XCTAssertFalse(Self.matches(cssRules[0], url: badge, page: page),
                        "the CSS rule reaches into a frame")
+
+        // The page itself: the rule still does its job.
+        XCTAssertTrue(Self.matches(cssRules[0], url: page, page: page),
+                      "the CSS rule does not hide the ad boxes of the page")
     }
 
     /// AC123: the user can let a site through, and that site is then left
@@ -131,6 +155,11 @@ final class AdBlockerTests: XCTestCase {
         }
         XCTAssertEqual(ignore.count, 1, "the exempt site has one rule")
         XCTAssertEqual(ignore.first?.offset, rules.count - 1, "the exempt rule has to come last")
+
+        // `if-domain` reads the top document's host and matches it exactly,
+        // so the `www.` twin is named too.
+        let domains = (ignore.first?.element["trigger"] as? [String: Any])?["if-domain"] as? [String]
+        XCTAssertEqual(domains, ["sonyliv.com", "www.sonyliv.com"])
 
         // On that site, nothing is stopped.
         XCTAssertFalse(Self.blocked(rules, by: ad, page: page),
@@ -214,9 +243,9 @@ final class AdBlockerTests: XCTestCase {
 
     /// AC133: **a site name is a host name, and nothing else.**
     ///
-    /// An exemption ends up in the rule as a **glob** (`*://<site>/*`), and
-    /// `if-top-url` only knows globs — so a `*` or a `?` in the site would
-    /// match **other** hosts as well. `*.com` would let every site through.
+    /// A site name ends up in a rule as a host, and a host with a glob
+    /// character in it matches **other** hosts as well — `*.com` would let
+    /// every site through.
     func test_AC133_a_site_name_is_a_host_name_and_nothing_else() {
         // The hosts that are real.
         XCTAssertTrue(AdBlockerEngine.isPlainHost("sonyliv.com"))
@@ -249,6 +278,40 @@ final class AdBlockerTests: XCTestCase {
         XCTAssertFalse(engine.exemptSites.contains("*.com"))
     }
 
+    /// AC134: **the whole rule list compiles.**
+    ///
+    /// WebKit compiles the list as **one** thing: a single value it does not
+    /// know — `load-type: ["top-frame"]`, or a glob that starts with `*://` —
+    /// and the **entire** list is dead. The app then hands out no rules at
+    /// all and the blocker does nothing, with only a line in the log to say
+    /// so. This test compiles the list the app really hands over and fails
+    /// when WebKit refuses it.
+    func test_AC134_the_whole_rule_list_compiles() async {
+        // With an exemption as well: the exemption's rule is the one that
+        // used to break the list.
+        for exempt in [Set<String>(), ["sonyliv.com"]] {
+            let rules = AdBlockerEngine.makeRules(exemptSites: exempt)
+            let json = try! JSONSerialization.data(withJSONObject: rules)
+            let encoded = String(data: json, encoding: .utf8)!
+
+            let compiled = expectation(description: "the rules compile")
+            var list: WKContentRuleList?
+            var failure: Error?
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "AdBlockerTests-\(exempt.isEmpty ? "plain" : "exempt")",
+                encodedContentRuleList: encoded
+            ) { ruleList, error in
+                list = ruleList
+                failure = error
+                compiled.fulfill()
+            }
+            await fulfillment(of: [compiled], timeout: 30)
+
+            XCTAssertNil(failure, "the rule list does not compile: \(failure?.localizedDescription ?? "")")
+            XCTAssertNotNil(list, "the rule list is not handed over")
+        }
+    }
+
     // MARK: - WebKit's matching, in as few lines as it takes
 
     /// Whether the rules stop a request.
@@ -271,42 +334,41 @@ final class AdBlockerTests: XCTestCase {
     }
 
     /// Whether every part of a rule's trigger says yes.
+    ///
+    /// The parts behave the way **WebKit** behaves — measured against a real
+    /// `WKWebView`, not assumed:
+    ///
+    /// * `url-filter` is a regex over the **whole URL**;
+    /// * `if-domain` and `unless-domain` read the **top document's** host and
+    ///   match it **exactly**;
+    /// * `load-type` knows `"first-party"` (the page's own origin) and
+    ///   `"third-party"` (everything else) — and nothing else.
     private static func matches(_ rule: [String: Any], url: URL, page: URL) -> Bool {
         guard let trigger = rule["trigger"] as? [String: Any] else { return false }
 
         if let filter = trigger["url-filter"] as? String,
-           url.absoluteString.range(of: filter, options: [.regularExpression, .caseInsensitive]) == nil {
+           url.absoluteString.range(of: filter, options: .regularExpression) == nil {
             return false
         }
         if let domains = trigger["if-domain"] as? [String],
-           !domains.contains(where: { isHost(url, $0) }) {
+           !domains.contains(where: { isHost(page, $0) }) {
             return false
         }
         if let domains = trigger["unless-domain"] as? [String],
-           domains.contains(where: { isHost(url, $0) }) {
-            return false
-        }
-        if let patterns = trigger["if-top-url"] as? [String],
-           !patterns.contains(where: { glob($0, page.absoluteString) }) {
+           domains.contains(where: { isHost(page, $0) }) {
             return false
         }
         if let loadTypes = trigger["load-type"] as? [String] {
-            guard loadTypes.contains("top-frame") else { return false }
-            guard page.absoluteString == url.absoluteString else { return false }
+            let sameOrigin = page.scheme == url.scheme && page.host == url.host
+            if loadTypes.contains("first-party") && !sameOrigin { return false }
+            if loadTypes.contains("third-party") && sameOrigin { return false }
         }
         return true
     }
 
-    /// WebKit's `if-domain`: the host itself or a host under it.
-    private static func isHost(_ url: URL, _ domain: String) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return host == domain || host.hasSuffix("." + domain)
-    }
-
-    /// WebKit's `if-top-url` glob: `*` stands for anything.
-    private static func glob(_ pattern: String, _ text: String) -> Bool {
-        let escaped = NSRegularExpression.escapedPattern(for: pattern)
-            .replacingOccurrences(of: "\\*", with: ".*")
-        return text.range(of: "^\(escaped)$", options: .regularExpression) != nil
+    /// WebKit's `if-domain` / `unless-domain`: the **top document's** host,
+    /// matched **exactly** — "sonyliv.com" does not cover "www.sonyliv.com".
+    private static func isHost(_ page: URL, _ domain: String) -> Bool {
+        page.host?.lowercased() == domain.lowercased()
     }
 }

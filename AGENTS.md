@@ -683,26 +683,46 @@ it is set in `project.yml`.
   included.** The pattern is a regex searched **anywhere** in the URL, so a rule
   for `googletagmanager.com` also stopped
   `https://www.google.com/ccm/collect?scrsrc=www.googletagmanager.com` — the
-  page's *own* request, killed by a host it only **mentioned**. A host that is
-  **called** is matched with `if-domain`, which reads the **host** of the request
-  (and the hosts under it). The same goes for `unless-domain`.
+  page's *own* request, killed by a host it only **mentioned**. Anchor the
+  filter to the **host of the request** instead:
+  `^https?://([^/]+\.)?<host>(:[0-9]+)?/` — the host has to be the one that is
+  *called*, and nothing after the host can ever match.
+- **`if-domain` is the **top document's** host, matched **exactly** — not the
+  host of the request, and not "the host or a host under it".** Measured with a
+  real `WKWebView`: a rule with `if-domain: ["127.0.0.1"]` never stopped an
+  image loaded from `127.0.0.1` while the page was on `localhost`, and a rule
+  with `if-domain: ["0.0.1"]` never matched the page on `127.0.0.1`. So a
+  block rule that names an ad host with `if-domain` **never stops that ad** —
+  it only fires on a page that *is* the ad host, where it then blocks
+  everything. `if-domain` is the right tool for an **exemption** ("leave this
+  site alone") and the wrong tool for a block. `unless-domain` reads the same
+  host the same way.
 - **A tag manager is not an ad host.** `googletagmanager.com` is the pipe a
   site's **own** configuration travels through — SonyLIV's sign-in page took its
   login-and-tray setup from there (measured: the rules took 33 of the page's 93
   resources away, and the tag manager was one of them), so blocking it breaks
   the page while the ads it fires at stay blocked **on their own**. A block list
   that names a tag manager is naming the site's own plumbing.
-- **The CSS rule of a blocker has to be `load-type: ["top-frame"]`.** A captcha
-  badge, a payment form and a consent banner all live in a **third-party
-  frame**, and a rule that matches every frame can hide the thing the user came
-  for. The captcha and identity providers are excepted with `unless-domain` as
-  well.
+- **The CSS rule of a blocker has to be `load-type: ["first-party"]`.** A
+  captcha badge, a payment form and a consent banner all live in a
+  **third-party frame**, and a rule that matches every frame can hide the thing
+  the user came for. The captcha and identity providers are excepted with
+  `unless-domain` as well — with the `www.` twin, because the match is exact.
+- **WebKit knows exactly two load types: `"first-party"` and `"third-party"`.**
+  `"top-frame"`, `"child-frame"`, `"main-frame"`, `"top-level"` and
+  `"topFrame"` are all refused (*"Rule list compilation failed: Invalid string
+  in the trigger flags array"*) — and **one bad rule fails the compilation of
+  the WHOLE list**, so the blocker is then dead and only the log says so.
+  `"first-party"` is the page itself; `"third-party"` is everything else.
+- **`if-top-url` needs a **literal scheme** — `*://site/*` does not compile.**
+  Measured: `http://site/*`, `https://*.site/*` and `site/*` compile; every
+  pattern that **starts** with `*` fails with *"Internal error in YARR"*.
+  The exemption uses `if-domain` instead, so the question does not arise.
 - **`ignore-previous-rules` has to come **last**, and it cancels the rules
   before it.** That is how a site the user let through is left alone — the
   exemption is a rule, not a flag.
-- **An exemption is a glob, so a site name has to be a host name.**
-  `if-top-url` only knows globs, and the exemption is written as
-  `*://<site>/*` — so a site carrying a `*` matches **other** hosts too.
+- **A site name has to be a host name.** The exemption ends up in a rule as a
+  host, and a host with a glob character in it matches **other** hosts too.
   `URL(string: "https://*.evil.com/x")` parses and its host is `*.evil.com`,
   and `https://*/` parses too: without a check on the site name, opening
   such a URL in the app's browser would let **every** site through. The site
@@ -710,8 +730,13 @@ it is set in `project.yml`.
 - **The compiled rule list is cached under its identifier.** WebKit keeps it, and
   the app asks for it *by name* before it compiles anything — so a list compiled
   from the **old** rules is found and used, and the new rules are **never
-  compiled**. The identifier (`DrivePlayAdBlockerRulesV7`) has to change with
+  compiled**. The identifier (`DrivePlayAdBlockerRulesV8`) has to change with
   the rules.
+- **Compile the real list in a test.** The rule list is one thing to WebKit —
+  a single value it does not know kills every rule — and a unit test that
+  *simulates* the matching cannot see that. `AdBlockerTests` hands the list
+  the app really produces to `WKContentRuleListStore` and fails when WebKit
+  refuses it.
 - **Compiling again under the *same* identifier does replace the rules.**
   Measured: rules A (block `localhost`) stopped a page from loading; rules B
   (block `127.0.0.1`) compiled under the **same** identifier let it through

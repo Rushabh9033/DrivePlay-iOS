@@ -7,30 +7,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **The ad blocker broke the sign-in of the sites that use a captcha.** The
-  truth, measured against the real SonyLIV page: **no rule ever matched the
-  reCAPTCHA addresses** — the captcha's script and its frames were allowed
-  through all along. The page broke for four other reasons, and all four
-  are fixed:
+- **The ad blocker broke the sign-in of the sites that use a captcha.**
+  The truth, measured against the real SonyLIV page and against a real
+  `WKWebView`: **no rule ever matched the reCAPTCHA addresses** — the captcha's
+  script and its frames were allowed through all along. The page broke for
+  four other reasons, and all four are fixed:
 
-  1. a rule matched the **whole URL**, so a page that merely *mentioned* a
-     blocked host in its query string had its own request stopped. Google's
-     own collector carries `&scrsrc=www.googletagmanager.com` in its query,
-     so the page's own analytics died with it. The rules now match the
-     **host** of a request and nothing else;
+  1. **the block rules never stopped an ad at all.** They named the ad hosts
+     with `if-domain`, and `if-domain` reads the **top document's** host, not
+     the host of the request — so a rule for the host of an image never
+     stopped that image. The rules now match the **host of the request** with
+     a filter that is anchored to it, so a page that merely *mentioned* a
+     blocked host in its query string (Google's own collector carries
+     `&scrsrc=www.googletagmanager.com`) keeps its own request;
   2. the rule that hides the ad boxes ran on **every page and every frame**,
      so it could hide a captcha badge — and a captcha badge lives in a
-     third-party frame. It now runs on the page alone, and it excepts the
-     captcha and identity providers;
-  3. the blocker could not be switched off: the "Ad Shield" sheet was a
-     read-only notice. It is a real control now, with a **per-site switch** —
-     a site that needs a captcha to log in can be let through while the rest
-     of the web stays blocked;
+     third-party frame. It now runs on the page alone
+     (`load-type: ["first-party"]`), and it excepts the captcha and identity
+     providers;
+  3. **the whole rule list did not compile.** WebKit compiles it as one
+     thing, and one value it does not know (`load-type: ["top-frame"]`, or a
+     glob that starts with `*://`) kills **every** rule — the blocker was
+     simply dead, and only the log said so. A test now compiles the list the
+     app really hands over;
   4. the **tag manager** was blocked, and a site's *own* setup travels
      through it — SonyLIV's sign-in page took its login-and-tray setup from
      there. It is not blocked any more; the ad hosts it fires at (DoubleClick,
      Google Ads, Google Analytics) are blocked on their own, so the ads stay
      blocked without the page breaking.
+
+  The blocker could not be switched off either: the "Ad Shield" sheet was a
+  read-only notice. It is a real control now, with a **master switch** and a
+  **per-site switch** — a site that needs a captcha to log in can be let
+  through while the rest of the web stays blocked.
 
   The compiled rules are also stored under a new name: WebKit keeps the
   compiled list, and the old one was found and used, so the new rules were
@@ -41,9 +50,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the page was loaded with the *old* rules and the switch looked like it had
   done nothing.
 
-  A site's name is checked before it is used: an exemption ends up in the
-  rule as a **glob**, so a host with a `*` in it (`https://*/` is a URL that
-  parses) would have let **every** site through.
+  A site's name is checked before it is used: it ends up in a rule as a
+  **host**, so a host with a `*` in it (`https://*/` is a URL that parses)
+  would have let **every** site through.
 
 - **"No Plex media server found on this account" — whatever the real problem
   was.** The one message was used for four different failures. Now:

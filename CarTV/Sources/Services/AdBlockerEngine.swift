@@ -14,10 +14,14 @@ public final class AdBlockerEngine: ObservableObject {
 
     /// The hosts whose widgets the CSS rule never hides — the captcha and
     /// identity providers, and the site that reported the broken login.
+    ///
+    /// `unless-domain` reads the **top document's** host and matches it
+    /// **exactly** — a rule that names "sonyliv.com" does not cover
+    /// "www.sonyliv.com" — so every host comes with its `www.` twin.
     static let protectedDomains: [String] = [
         "google.com", "gstatic.com", "recaptcha.net", "hcaptcha.com",
         "cloudflare.com", "arkoselabs.com", "funcaptcha.com", "sonyliv.com"
-    ]
+    ].flatMap { [$0, "www.\($0)"] }
 
     static let exemptSitesKey = "adblocker.exemptSites"
     static let enabledKey = "adblocker.isEnabled"
@@ -29,7 +33,7 @@ public final class AdBlockerEngine: ObservableObject {
     /// and the app asks for it by name first — a list that was compiled from
     /// the old rules under the old name is found and used, and the new rules
     /// are never even compiled.
-    private let ruleListIdentifier = "DrivePlayAdBlockerRulesV7"
+    private let ruleListIdentifier = "DrivePlayAdBlockerRulesV8"
 
     public init() {
         if UserDefaults.standard.object(forKey: Self.enabledKey) != nil {
@@ -224,14 +228,28 @@ public final class AdBlockerEngine: ObservableObject {
         
         var rules: [[String: Any]] = []
         for d in domains {
-            // `if-domain` matches the **host** of the request. A `url-filter`
-            // matched the whole URL, so a page that merely mentioned a
-            // blocked host in a query string — Google's own collector is
-            // stopped by "&scrsrc=www.googletagmanager.com" — had its own
-            // request blocked. A host that is only *mentioned* is not a host
-            // that is *called*.
+            // The rule has to match the **host of the request** and nothing
+            // else.
+            //
+            // `url-filter` is a regex over the **whole URL**, so a filter
+            // that merely *mentions* a host also stops a page that only
+            // mentions it in a query string — Google's own collector is
+            // stopped by "&scrsrc=www.googletagmanager.com".
+            //
+            // `if-domain` is no help: it reads the **top document's** host,
+            // not the host of the request (measured: a rule for the host of
+            // an image never stopped that image, and a rule for the host of
+            // the *page* stopped the whole page). It is the right tool for
+            // an **exemption** — "leave this site alone" — and the wrong
+            // tool for a block.
+            //
+            // So the filter is anchored to the host:
+            // `^https?://([^/]+\.)?<host>(:[0-9]+)?/` — the host has to be
+            // the one that is *called*, and a host that only appears later
+            // in the URL (a path, a query) can never match.
+            let host = d.replacingOccurrences(of: ".", with: "\\.")
             rules.append([
-                "trigger": ["if-domain": [d], "url-filter": ".*"],
+                "trigger": ["url-filter": "^https?://([^/]+\\.)?\(host)(:[0-9]+)?/"],
                 "action": ["type": "block"]
             ])
         }
@@ -239,15 +257,18 @@ public final class AdBlockerEngine: ObservableObject {
         // Native CSS element hiding for ad banners and video overlays.
         //
         // It hides the ad containers **of the page itself** and nothing
-        // else: `load-type: top-frame` keeps it out of every frame, because
-        // a captcha badge, a payment form and a consent banner all live in a
-        // third-party frame, and hiding one of them breaks the login the user
-        // came for. `unless-domain` protects the captcha and identity
+        // else: `load-type: ["first-party"]` keeps it out of every frame,
+        // because a captcha badge, a payment form and a consent banner all
+        // live in a third-party frame, and hiding one of them breaks the
+        // login the user came for. (`"top-frame"` is **not** a load type
+        // WebKit knows — it knows `"first-party"` and `"third-party"` and
+        // nothing else, and one value it does not know kills the **whole**
+        // list.) `unless-domain` protects the captcha and identity
         // providers even on the page itself.
         rules.append([
             "trigger": [
                 "url-filter": ".*",
-                "load-type": ["top-frame"],
+                "load-type": ["first-party"],
                 "unless-domain": Self.protectedDomains
             ],
             "action": [
@@ -258,12 +279,15 @@ public final class AdBlockerEngine: ObservableObject {
 
         // A site the user has let through: every rule above is ignored for
         // the pages of that site. The rule comes **last**, so it wins.
+        //
+        // `if-domain` reads the **top document's** host, which is exactly
+        // what an exemption needs, and it matches it **exactly** — so the
+        // `www.` twin is named as well. (`if-top-url` would need a glob
+        // instead, and a glob that starts with `*://` does not even
+        // compile — one bad rule and the whole list is dead.)
         for site in exemptSites {
             rules.append([
-                "trigger": [
-                    "url-filter": ".*",
-                    "if-top-url": ["*://\(site)/*", "*://*.\(site)/*"]
-                ],
+                "trigger": ["url-filter": ".*", "if-domain": Self.hostVariants(site)],
                 "action": ["type": "ignore-previous-rules"]
             ])
         }
@@ -317,13 +341,24 @@ public final class AdBlockerEngine: ObservableObject {
         return isPlainHost(site) ? site : nil
     }
 
+    /// The exact hosts a rule has to name for a site.
+    ///
+    /// `if-domain` and `unless-domain` read the **top document's** host and
+    /// match it **exactly** — "sonyliv.com" does not cover
+    /// "www.sonyliv.com" (measured). So a rule that names a site names its
+    /// `www.` twin as well.
+    static func hostVariants(_ site: String) -> [String] {
+        site.hasPrefix("www.") ? [site] : [site, "www.\(site)"]
+    }
+
     /// Whether a string is a plain host name — letters, digits, dashes and
     /// dots, and nothing else.
     ///
-    /// The exemption ends up in the rule as `*://<site>/*`, and `if-top-url`
-    /// only knows globs. A `*` or a `?` in the site would therefore match
-    /// **other** hosts as well — `*.com` would let every site through — so a
-    /// site that is not a plain host name is never accepted.
+    /// The exemption ends up in the rule as a **host**, and a host with a
+    /// glob character in it matches **other** hosts as well — `*.com` would
+    /// let every site through. `URL(string: "https://*.evil.com/x")` parses
+    /// and its host is `*.evil.com`, and `https://*/` parses too — so a site
+    /// that is not a plain host name is never accepted.
     static func isPlainHost(_ site: String) -> Bool {
         guard !site.isEmpty, site.count <= 253 else { return false }
         let labels = site.split(separator: ".", omittingEmptySubsequences: false)
