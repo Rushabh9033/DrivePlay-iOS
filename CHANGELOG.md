@@ -11,7 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   **screen**, served over the local network, and the token in its path is the
   only thing that keeps it private — eight hex characters are 2³² guesses,
   which is a weekend's work for anyone on the same Wi-Fi. The token is **128
-  bits** now.
+  bits** now — one unbroken string of hex, so it needs no escaping in the
+  URL path and in the relay's announcement.
 
 - **A failed stream logged the account's token.** The playback error was
   logged as it was, and an `NSError`'s description carries the URL that

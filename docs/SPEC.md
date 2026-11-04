@@ -299,7 +299,7 @@ arrives as a string *and* as a list. A refused account is now refused by name
 | 147 | A compass that is **not sure of itself** (an error of tens of degrees) does not steer the needle — the course takes over | `SatelliteHUDTests` |
 | 148 | The heading is smoothed by **time** — the same readings move the needle less when they arrive in a burst, and a reading that arrives **late** neither moves the needle nor drags the filter's clock back | `SatelliteHUDTests` |
 | 149 | The compass **says whether it is sure** of the heading | `SatelliteHUDTests` |
-| 150 | The screen stream's **token is 128 bits wide** — it is the only thing that keeps the phone's screen off the rest of the network | `CredentialStorageTests` |
+| 150 | The screen stream's **token is 128 bits wide and one unbroken string** — it is the only thing that keeps the phone's screen off the rest of the network, and it rides in a URL path and in the relay's announcement, so it is hex that never needs escaping | `CredentialStorageTests` |
 | 151 | A URL that carries a password is **not written to the log** as it is — the log keeps the host and the file name | `CredentialStorageTests` |
 
 ## Verification

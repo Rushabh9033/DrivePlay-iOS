@@ -134,7 +134,7 @@ set**, checked mechanically.
 |---|---|
 | `xcodebuild … -destination generic/platform=iOS build-for-testing` | **TEST BUILD SUCCEEDED** |
 | The compass code, executed | the **real** `SatelliteHUDService.swift` compiled into a standalone program (only the `import UIKit` line and one macOS-unavailable call in `stop()` removed) and driven through the assertions of AC135–AC149 — **28 checks, all green**. Against the *old* clock behaviour the same harness fails the late-reading check (86.79° instead of 73.0°), so the check bites |
-| The device suite (the whole 165-test suite on the phone) | **queued** — the phone is off the USB bus |
+| The device suite (the whole suite on the phone) | **`Executed 174 tests, with 7 tests skipped and 0 failures` → `** TEST SUCCEEDED **`** (15:12, 39.176 s, zero app restarts). The 7 skips are the contract tests that read a repository file — the checkout is not on the phone, so they say so and skip. AC32 and AC43 (the two that were killed with a SIGKILL last round) **passed**. The suite's **first** run failed one test, AC150, and the failure was real — see §5 |
 
 ---
 
@@ -171,6 +171,24 @@ Three findings are **written down instead**, with the reason — they are in
 3. **neither web view has a navigation policy** — the scheme is constrained
    where the address is entered, but a redirect is not checked.
 
+### The suite's first run failed AC150 — and the test was right
+
+The first run on the phone (15:09) came back with **one failure**:
+`AC150 — the screen's token is wide enough to be a lock`. The test asked for
+a token that is **one unbroken string**; the code produced
+`UUID().uuidString`'s **dashed** form.
+
+The test had never run before — the phone was off the bus — and the
+standalone harness covered the **redaction** (AC151) but never the **token**.
+The trace said *"151 rows ↔ 151 test names, the same set"*, which is true
+and says nothing at all about whether a test's **body** is right.
+
+The code is fixed: the token is one unbroken string of hex now
+(`UUID().uuidString.replacingOccurrences(of: "-", with: "")`), which also
+means it never needs escaping in the URL path or in the relay's announcement
+line. The second run: **174 tests, 7 skipped, 0 failures**, `** TEST
+SUCCEEDED **`.
+
 ---
 
 ## What was not touched
@@ -194,23 +212,19 @@ Three findings are **written down instead**, with the reason — they are in
 
 ## Still open
 
-- **The phone dropped off the USB bus** while this round was being finished.
-  Right now `xcrun devicectl list devices` shows *Rushabh's Iphone* as
-  **unavailable** — it is not on the bus at all, and `devicectl device info
-  lockState` fails with *"The tunnel connection failed"*. The device suite for
-  this round is **queued**: the first waiter's 100-minute window expired with
-  the phone still gone, so a **24-hour** waiter is running now — it polls every
-  15 s and writes `build/device_test_compass.log` the moment the phone
-  answers, so it runs on its own. It also **waits out a locked phone**: a
-  locked screen cannot launch the test bundle (*"Xcode cannot launch
-  CarTVTests … because the device is locked"*), so the run is retried every
-  30 s, eight times, instead of reporting a failure the user has to fix by
-  hand. The compile check (`TEST BUILD SUCCEEDED`) passed and the compass code
-  was executed on its own (see the table above). **Replug the cable** and the
-  suite will run by itself.
-- **The round is committed** as `53bfdbe` ("The compass that was still wrong,
-  and the locks that were too small") on `main`, **locally only** — this
-  repository has **no remote**, so nothing was pushed.
+- **The phone never came back on the USB bus, and it did not need to.** It
+  dropped off while this round was being finished (`xcrun devicectl list
+  devices` → *unavailable*, `system_profiler SPUSBDataType` → no iPhone at
+  all) and the device suite sat queued behind a cable for hours — the first
+  waiter's 100-minute window expired with the phone still gone. But a
+  **paired** phone off the USB bus is reachable over **Wi-Fi**:
+  `devicectl device info lockState` answers and `xcodebuild -showdestinations`
+  lists it as a destination. The suite ran that way — **174 tests, 0
+  failures** (15:12). The lesson is in `AGENTS.md`: **test the link, not the
+  word** — a waiter that waits for the literal *"connected"* waits for ever,
+  and *"disconnected"* contains *"connected"*.
+- **The round is committed** on `main`, **locally only** — this repository has
+  **no remote**, so nothing was pushed.
 - `AGENTS.md`'s *Build & test* section now carries the user's own rule — the
   **physical iPhone 13 only**, the iPhone 18 Pro simulator never booted,
   `generic/platform=iOS` for a compile check — so the next session cannot

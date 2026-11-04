@@ -33,6 +33,17 @@ A suite run against a destination the phone cannot reach fails with
 *"Unable to find a destination matching the provided destination specifier"* —
 that is the **cable**, not the code.
 
+**But `available (paired)` is not the same as gone.** A phone that is off the
+USB bus is still reachable over **Wi-Fi** when it is paired and on the same
+network: `devicectl device info lockState` answers, and `xcodebuild
+-showdestinations` lists it as a destination — so the suite runs on it
+without the cable at all. A waiter that waits for the literal word
+*"connected"* waits for ever over a Wi-Fi link. **Test the link, not the
+word**: `devicectl device info lockState` (does the tunnel answer?) or
+`xcodebuild -showdestinations` (is it a destination?) — and remember that
+*"disconnected"* contains *"connected"*, so a plain `grep` on the device list
+matches the wrong state too.
+
 **Other people's devices are not to be used** either ("SG MAC's iPhone",
 "Krushi Mac's iPad").
 
@@ -894,7 +905,18 @@ it is set in `project.yml`.
 - **A token in a URL path is the only lock on a LAN-served stream, and 32
   bits is not a lock.** The screen stream is served over the local network
   and every path carries the token, so `String(UUID().uuidString.prefix(8))`
-  — 2³² guesses — was the whole of its privacy. 128 bits.
+  — 2³² guesses — was the whole of its privacy. 128 bits, as **one unbroken
+  string of hex** (`UUID().uuidString.replacingOccurrences(of: "-", with: "")`):
+  the token rides in a URL path and in the relay's announcement line, and
+  hex needs no escaping in either.
+- **A test that has never run is not a test.** AC150 was written, the AC
+  trace said "151 rows ↔ 151 test names, the same set", and the test was
+  **wrong** — it asked for a token without dashes while the code produced
+  `UUID().uuidString`'s dashed form. It stayed wrong for hours because the
+  phone was off the USB bus and the standalone harness **only exercised the
+  redaction** (AC151), never the token. The device suite caught it in one
+  run. A green harness says nothing about what it did not run, and the
+  trace says nothing about whether a test's **body** is right.
 - **The app and the broadcast extension share no secret.** They live in
   different processes and share no container (an App Group would need another
   Apple-granted capability), so the relay's announcement on the loopback

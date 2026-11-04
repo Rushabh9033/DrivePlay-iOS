@@ -293,7 +293,11 @@ final class ScreenStreamServer {
     /// It is the **only** thing that keeps the phone's screen off the rest of
     /// the network, so it is 128 bits wide. Eight hex characters are 32 bits,
     /// and 2³² guesses is a weekend's work for anyone on the same Wi-Fi.
-    let token = UUID().uuidString.lowercased()
+    ///
+    /// The dashes of a UUID are dropped: the token rides in a URL path and in
+    /// the relay's announcement line, and one unbroken string of hex never
+    /// needs escaping in either.
+    let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
 
     private let writer: LiveScreenWriter
     private let queue = DispatchQueue(label: "com.rushabh.cartvv.screenshare.server")
