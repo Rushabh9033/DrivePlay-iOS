@@ -1097,6 +1097,14 @@ it is set in `project.yml`.
   message — and check `xcrun devicectl device info lockState` and
   `xcrun devicectl device info displays` (the backlight state) before believing a device failure.
   `idevicesyslog` is installed and gives the device's own log while the run happens.
+- **A killed app has a signature — look for it before reading a "failed" test as a bug.**
+  Six tests failed in one device run with **no assertion message at all**, and each was followed by
+  *"Restarting after unexpected exit, crash, or test timeout"*. The three tells: **no crash report**
+  in the phone's crash-log folder (a crash always writes one), the xcresult says *"the test runner
+  exited with code 0"* or *"Test crashed with signal kill"*, and **the previous instance was still
+  holding the app's listener port** when the next one started (*"Address already in use"*) — which
+  means the old process was **suspended in the background**, not dead. Re-run the same tests with
+  the phone **unlocked**: all six passed in 21.7 s, and the code was never at fault.
 
 ## Data model gotcha
 

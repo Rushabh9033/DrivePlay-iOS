@@ -75,20 +75,24 @@ from the device list, and whether the phone can be driven is asked of
   8 skipped, 6 failed**. The six are **the app process being killed
   mid-test**, not assertion failures — no crash report was written, and the
   previous instance was still holding the relay port when the next one
-  started, so it had been **suspended in the background** (the phone locked
-  itself, or it was picked up). None of the six touches the code this round
-  changed, and the new `CarDisplaySessionTests` **passed** on the phone. The
-  re-run needs a phone that is plugged in, unlocked and **left alone** for
-  ten minutes.
+  started, so it had been **suspended in the background**. None of the six
+  touches the code this round changed, and the new `CarDisplaySessionTests`
+  **passed** on the phone.
+- **Confirmed:** with the phone **unlocked**, the six were re-run on their
+  own and **all six passed** (`** TEST SUCCEEDED **`, 21.7 s). The cause
+  was the phone's **locked screen** — Xcode says so outright when the next
+  run cannot start: *"Xcode cannot launch CarTVTests on Rushabh's Iphone
+  because the device is locked."*
 - The **manual test on the car**: the user is testing by hand (see below).
 
 ## Blocked
-- The phone is off the bus again (`devicectl`: *unavailable*, last seen
-  14:14), so the suite cannot be re-run and the CarPlay Simulator has no
-  device to attach to. The **cable** is the blocker, not the code.
-- The re-run also has to **wait for the manual test** — a suite that starts
-  while the user is driving the car's display takes the phone's screen over
-  and ruins the test they are doing.
+- The **full** suite has not been re-run green in one go: the ten minutes
+  it takes need the phone **unlocked and untouched**, and it takes over the
+  phone's screen while it runs — so it waits for the user's manual test to
+  be finished.
+- The phone keeps **dropping off the USB bus** (`idevice_id -l` empty), so a
+  run has to be retried when it does; over Wi-Fi it is a destination, but
+  the link is flakier than the cable.
 
 ## Files touched
 - `CarTV/Sources/App/CarDisplaySession.swift` (new)
@@ -129,10 +133,12 @@ from the device list, and whether the phone can be driven is asked of
   the catalogue were measured **on the car's display** — the geometry in
   "Done" is read off the simulator's window, not guessed.
 - The **device suite**: this round's run **happened** — **175 passed, 8
-  skipped, 6 failed** (14:02–14:12). The six are the app process killed,
-  not assertion failures; the details and the evidence are in the review
-  (§1.27 fault 11). The newest run that was **fully green** is the
-  seventeenth pass's (**181 tests**, 7 skipped, **0 failures**).
+  skipped, 6 failed** (14:02–14:12). The six are the app process killed by
+  the phone's **locked screen**, not assertion failures; the details and
+  the evidence are in the review (§1.27 fault 11). The six **re-run with the
+  phone unlocked: all six pass** (`** TEST SUCCEEDED **`, 21.7 s). The
+  newest run that was **fully green in one go** is the seventeenth pass's
+  (**181 tests**, 7 skipped, **0 failures**).
 - The **fixed gate is proven both ways**: the run under the *old* script
   handed xcodebuild the phone's id while the phone was off the bus and died
   with *"Unable to find a destination matching the provided destination
@@ -148,8 +154,9 @@ from the device list, and whether the phone can be driven is asked of
 1. Plug the cable in (or make sure the phone is on the same network) and let
    `scripts/device_test.sh` run — it is waiting for the phone now. The phone
    must be **unlocked and left alone** for the ten minutes the run takes:
-   six tests died with the app in the last run because the phone was
-   backgrounded (see §1.27 fault 11 of the review).
+   six tests died with the app in the last run because the phone's screen
+   was **locked** (see §1.27 fault 11 of the review — with the phone
+   unlocked, those six all pass).
 2. On the car: Browser tab → *"Search or type a URL"* → **type**. The
    characters must land in the search field and the row behind must **not** be
    selected. Then type a site's **name** ("HBO Max", "Prime Video",
