@@ -111,7 +111,8 @@ from the device list, and whether the phone can be driven is asked of
 
 ## Verification
 - Compile check: `xcodebuild … -destination 'generic/platform=iOS'
-  CARPLAY_CATEGORY=video build-for-testing` → **`TEST BUILD SUCCEEDED`**.
+  CARPLAY_CATEGORY=video build-for-testing` → **`TEST BUILD SUCCEEDED`** —
+  re-run on the **committed** tree (`83b4c40`) at the end of the session.
 - The **AC trace** is mechanical: **164 SPEC rows ↔ 164 distinct AC ids in
   `CarTV/Tests/`** — the same set, no more, no fewer (181 test functions in
   all).
@@ -121,6 +122,16 @@ from the device list, and whether the phone can be driven is asked of
 - The **device suite**: the newest run on the phone is the seventeenth pass's
   (**181 tests**, 7 skipped, **0 failures**). This round's run is **queued**
   behind the cable — the script now waits for the link.
+- The **fixed gate is proven both ways**: the run under the *old* script
+  handed xcodebuild the phone's id while the phone was off the bus and died
+  with *"Unable to find a destination matching the provided destination
+  specifier: { platform:macOS, … name:My Mac }"*; with the fix,
+  `xcodebuild -showdestinations` **does not list the phone** at all, so the
+  script keeps waiting instead of running a doomed build.
+- The **commit security review** for `83b4c40`: *"no security issues found"*
+  (`~/.claude/security/log.txt`). The **older** commit `936357f`'s review
+  timed out ("the model's reply could not be read") — that review is still
+  missing, and the tree has moved on since.
 
 ## Next steps for next session
 1. Plug the cable in (or make sure the phone is on the same network) and let
