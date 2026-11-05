@@ -26,6 +26,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The car's keyboard clicked the row behind it.**
+  The address bar's results were the **whole catalogue of sites** — seventeen
+  rows with big tiles — so a row was always sitting under the keyboard that
+  floats over the bottom of the car's list, and the key press landed on the
+  row instead of the key. The address bar's list is **short** now: the way
+  back, what the user typed, and a couple of matches. The whole catalogue is
+  in the Browser tab's own list, one tap away.
+
+- **A site could not be found by its name.**
+  The results matched the **address** only, so "HBO Max", "Prime Video",
+  "Sony LIV" and "iQIYI" found nothing — the name is what the user reads on
+  the row, and "HBO Max" is nowhere in "max.com". A site answers to its name
+  as well as to its address now.
+
+- **The car's browser was a remote control for the phone.**
+  CarPlay has **no web template** — there is none in `CarPlay.framework` at
+  all — so a template browser can never show a page itself. The app's own car
+  screen (the one with a real `WKWebView`) lives in the **external-display**
+  scene, and the app asks the system for it when the CarPlay scene connects.
+  A page the car asks for goes there; where the system refuses the second
+  scene, the old path survives and the page runs on the phone.
+
 - **The video did not start on the car's display.**
   A video the user started **on the phone** was handed off, but a video the
   **car** asked for was offered to the car's display exactly **once** — at the

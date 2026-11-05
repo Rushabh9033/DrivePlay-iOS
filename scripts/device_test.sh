@@ -18,13 +18,19 @@ echo "waiting for the phone ($DEVICE_NAME) …"
 udid=""
 deadline=$(( $(date +%s) + WAIT_SECONDS ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    # devicectl reports the state, but it is not the only truth: a phone that
-    # is plugged in shows up as "available (paired)" there while it is
-    # "connected" — so the USB list (libimobiledevice) is asked as well.
+    # **Test the link, not the word.** devicectl's state is a string, and the
+    # wrong state matches the right words: "unavailable" contains
+    # "available", and "disconnected" contains "connected" — so a grep on the
+    # device list hands xcodebuild a destination it cannot reach, and the run
+    # dies with "Unable to find a destination matching the provided
+    # destination specifier". The udid comes from the list; whether the phone
+    # can be driven is asked of xcodebuild itself.
     line=$(xcrun devicectl list devices 2>/dev/null | grep -i "$DEVICE_NAME" | head -1)
-    if printf '%s' "$line" | grep -qE "connected|available"; then
-        udid=$(printf '%s' "$line" | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1)
-        [ -n "$udid" ] && break
+    candidate=$(printf '%s' "$line" | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1)
+    if [ -n "$candidate" ] && xcodebuild -project CarTV.xcodeproj -scheme CarTV \
+        -showdestinations 2>/dev/null | grep -q "$candidate"; then
+        udid="$candidate"
+        break
     fi
     sleep 10
 done

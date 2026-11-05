@@ -622,12 +622,17 @@ final class CarPlayCardPatcher {
 ///
 /// CarPlay has no web view of its own — Apple does not allow one — so the
 /// browser on the car is a **search template**: the search field in its header
-/// is the address bar, the results are the app's own sites, and what the user
-/// types is opened in the app's browser **on the phone**, where the app's
-/// screen share carries it to the car.
+/// is the address bar, and what the user types is opened in the app's browser
+/// **on the phone**, where the app's screen share carries it to the car (or on
+/// the car's own screen, when the app has one).
 ///
 /// The address bar is **pushed onto the stack**, never a tab: the tab bar
 /// rejects a search template and the exception takes the app down.
+///
+/// The **keyboard is the car's own** — `CPSearchTemplate` has no keyboard of
+/// its own — and it floats over the bottom of the list. So the list here is
+/// **short**: the way back, what the user typed, and a couple of matches. The
+/// whole catalogue is in the Browser tab's own list, one tap away.
 ///
 /// The rules are the phone browser's own: a text that is a URL is a URL,
 /// anything else is a search.
@@ -645,11 +650,13 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
 
     /// What a picked row does — the tests replace it, so nothing is loaded.
     var openAddress: (String) -> Void = { address in
+        // The car's **own** browser first: the app's car screen has a real
+        // `WKWebView`, so the page runs **on the car**.
+        if CarDisplaySession.shared.open(address: address) { return }
+        // No car screen: the page runs on the phone and reaches the car
+        // through the phone's screen share. iOS always asks the **user** to
+        // start a share, so the phone has to say that the car is waiting.
         BrowserTabManager.shared.loadURLInActiveTab(address)
-        // The car has no web view of its own: the page runs on the phone and
-        // reaches the car through the phone's screen share. iOS always asks
-        // the **user** to start a share, so the phone has to say that the car
-        // is waiting.
         ScreenShareService.shared.carRequestedPage(address)
     }
 
@@ -672,12 +679,13 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
     /// the search's own list.
     private var backRow: CPListItem?
 
-    /// The row that shows the page the phone has open — built **once** and
-    /// kept until the page changes.
+    /// The most rows the address bar offers at once.
     ///
-    /// The search template is handed a fresh list on every keystroke, and a
-    /// row that is built again is a row the car has to be given again.
-    private var currentPageRow: (url: String, item: CPListItem)?
+    /// The car's **keyboard floats over the bottom of the list**, and a row
+    /// that sits under it takes the key presses instead of the keyboard — the
+    /// user's *"the keyboard clicks the row behind it"*. Four rows fit above
+    /// it: the way back, what the user typed, and two matches.
+    static let maximumRows = 4
 
     /// The rows of the app's own sites — built **once**.
     ///
@@ -698,24 +706,14 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
         return rows
     }()
 
-    /// The rows the browser offers: the page the phone shows now, then the
-    /// app's own sites.
-    func rows(currentURL: String) -> [Row] {
-        var rows: [Row] = []
-        if !currentURL.isEmpty {
-            let item: CPListItem
-            if let known = currentPageRow, known.url == currentURL {
-                item = known.item
-            } else {
-                item = CPListItem(text: "On the phone now",
-                                  detailText: currentURL,
-                                  image: UIImage(systemName: "safari.fill"))
-                currentPageRow = (currentURL, item)
-            }
-            rows.append(Row(item: item, address: currentURL))
-        }
-        rows.append(contentsOf: Self.siteRows)
-        return rows
+    /// Whether a site answers to what the user typed.
+    ///
+    /// By its **name** as well as by its address — "HBO Max" is nowhere in
+    /// "hbo.max.com", and the name is what the user reads on the row.
+    private static func matches(_ row: Row, _ query: String) -> Bool {
+        if row.address.localizedCaseInsensitiveContains(query) { return true }
+        guard let name = row.item.text else { return false }
+        return name.localizedCaseInsensitiveContains(query)
     }
 
     public func searchTemplate(_ searchTemplate: CPSearchTemplate,
@@ -733,7 +731,7 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
                                           image: UIImage(systemName: "chevron.backward"))
         backRow = back
         offered.append(Row(item: back, address: ""))
-        // What the user typed is the first row: it opens the text the way the
+        // What the user typed is the next row: it opens the text the way the
         // phone's browser does — a URL is a URL, anything else is a search.
         if !query.isEmpty {
             offered.append(Row(item: CPListItem(text: "Open \"\(query)\"",
@@ -741,9 +739,16 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
                                                  image: UIImage(systemName: "magnifyingglass")),
                                address: query))
         }
-        for row in rows(currentURL: BrowserTabManager.shared.activeTabURL) {
-            guard query.isEmpty || row.address.localizedCaseInsensitiveContains(query) else { continue }
-            offered.append(row)
+        // The sites that match — and only a couple of them. The whole
+        // catalogue is in the Browser tab's own list, one tap away, and the
+        // list here has to stay **clear of the car's keyboard**: a row under
+        // it takes the key presses instead of the keyboard.
+        if !query.isEmpty {
+            for row in Self.siteRows {
+                guard offered.count < Self.maximumRows else { break }
+                guard Self.matches(row, query) else { continue }
+                offered.append(row)
+            }
         }
 
         results = [:]

@@ -428,17 +428,23 @@ final class CarPlayTabTests: XCTestCase {
     /// same catalogue the phone shows — and opens them on the phone, because
     /// CarPlay has no web view of its own.
     func test_AC61_the_browser_tab_offers_the_sites_of_the_apps_own_browser() {
-        let browser = CarPlayBrowserSearch()
+        let spy = SpyActions()
 
-        var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
+        let sections = CarPlayTemplates.browserSections(currentURL: "", owner: spy)
 
-        let youtube = results.first { $0.text == "YouTube" }
-        XCTAssertNotNil(youtube, "the car's browser has to offer the phone's sites")
+        let all = sections.flatMap { items(in: $0) }
+        guard let youtube = all.first(where: { $0.text == "YouTube" }) else {
+            XCTFail("the car's browser has to offer the phone's sites")
+            return
+        }
 
         // The catalogue is the app's own — the phone's browser shows the same.
         XCTAssertEqual(BrowserCatalog.videoAndMusic.first?.name, "YouTube")
         XCTAssertTrue(BrowserCatalog.groups.contains { $0.title == "Live & Sports" })
+
+        // A site opens on the phone.
+        youtube.handler?(youtube, {})
+        XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
     }
 
     /// AC99: the Browser tab's header is a **search bar** — the address bar of
@@ -477,7 +483,7 @@ final class CarPlayTabTests: XCTestCase {
         browser.openAddress = { opened.append($0) }
 
         var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "youtube") { results = $0 }
         guard let youtube = results.first(where: { $0.text == "YouTube" }) else {
             XCTFail("the browser has no YouTube row")
             return
@@ -486,6 +492,35 @@ final class CarPlayTabTests: XCTestCase {
         browser.searchTemplate(CPSearchTemplate(), selectedResult: youtube) {}
 
         XCTAssertEqual(opened, ["https://m.youtube.com"])
+    }
+
+    /// AC162: a page the car asks for goes to the car's **own** browser when
+    /// the car has one.
+    ///
+    /// The template Browser tab is a text field and a list of links — CarPlay
+    /// has no web template, so the tab cannot show a page itself. It used to
+    /// hand every address to the phone, which made the car's browser nothing
+    /// but a remote control for the iPhone. The app's own car screen has a
+    /// real `WKWebView`, so the page goes there.
+    func test_AC162_a_page_the_car_asks_for_goes_to_the_cars_own_browser() {
+        let screen = CarDisplaySessionTests.FakeCarScreen()
+        CarDisplaySession.shared.attach(screen)
+        defer { CarDisplaySession.shared.detach(screen) }
+
+        // The **real** routing — the default the car uses, not a replaced one.
+        let browser = CarPlayBrowserSearch()
+
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "youtube") { results = $0 }
+        guard let youtube = results.first(where: { $0.text == "YouTube" }) else {
+            XCTFail("the browser has no YouTube row")
+            return
+        }
+
+        browser.searchTemplate(CPSearchTemplate(), selectedResult: youtube) {}
+
+        XCTAssertEqual(screen.opened.map(\.absoluteString), ["https://m.youtube.com"],
+                       "the page did not open in the car's own browser")
     }
 
     /// AC101: the Browser tab is a **list** — the way into the address bar,
@@ -873,15 +908,52 @@ final class CarPlaySearchTests: XCTestCase {
         let browser = CarPlayBrowserSearch()
 
         var first: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { first = $0 }
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "you") { first = $0 }
         var second: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "y") { second = $0 }
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "yout") { second = $0 }
 
         let youtubeFirst = first.first { $0.text == "YouTube" }
         let youtubeSecond = second.first { $0.text == "YouTube" }
         XCTAssertNotNil(youtubeFirst, "the browser has no YouTube row")
         XCTAssertTrue(youtubeFirst === youtubeSecond,
                       "the row was built again, so its picture was drawn again")
+    }
+
+    /// AC163: the address bar's list stays **short** — the car's keyboard
+    /// floats over the bottom of the list, and a row under it takes the key
+    /// presses instead of the keyboard.
+    ///
+    /// This is the user's *"the keyboard clicks the row behind it"*: the empty
+    /// address bar used to offer the whole catalogue of sites, so a row was
+    /// **always** under the keyboard.
+    func test_AC163_the_address_bar_keeps_its_list_clear_of_the_cars_keyboard() {
+        let browser = CarPlayBrowserSearch()
+
+        var empty: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { empty = $0 }
+        XCTAssertEqual(empty.compactMap(\.text), ["Back to sites"],
+                       "the empty address bar must not offer a row under the keyboard")
+
+        var typed: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "a") { typed = $0 }
+        XCTAssertLessThanOrEqual(typed.count, CarPlayBrowserSearch.maximumRows,
+                                 "the address bar offered more rows than fit above the keyboard")
+        XCTAssertTrue(typed.contains { $0.text == "Open \"a\"" },
+                      "the address bar has to offer what the user typed")
+    }
+
+    /// AC164: a site answers to its **name** — "HBO Max" is nowhere in
+    /// "max.com", and the name is what the user reads on the row.
+    func test_AC164_a_site_answers_to_its_name_and_not_only_to_its_address() {
+        let browser = CarPlayBrowserSearch()
+
+        var results: [CPListItem] = []
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "HBO Max") { results = $0 }
+
+        XCTAssertNotNil(results.first { $0.text == "HBO Max" },
+                        "the site has to be found by the name the user reads")
+        XCTAssertTrue(results.contains { $0.text == "Open \"HBO Max\"" },
+                      "the address bar has to offer what the user typed")
     }
 
     /// AC153: the channel search does not build its rows again for every

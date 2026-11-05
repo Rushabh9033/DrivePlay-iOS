@@ -21,6 +21,10 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
         externalWindow.makeKeyAndVisible()
         self.window = externalWindow
         self.controller = controller
+        // The car's own screen is up: the browser that runs **on the car**
+        // lives here, and the template scene's Browser tab now has somewhere
+        // to put a page.
+        CarDisplaySession.shared.attach(controller)
     }
 
     public func sceneDidDisconnect(_ scene: UIScene) {
@@ -33,6 +37,9 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
     /// indicator on and drains the battery.
     func teardown() {
         controller?.stopMirroring()
+        if let controller {
+            CarDisplaySession.shared.detach(controller)
+        }
         controller = nil
         window = nil
     }

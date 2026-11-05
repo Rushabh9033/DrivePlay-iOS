@@ -146,6 +146,20 @@ as an empty account, one odd device emptied the whole list, and `provides`
 arrives as a string *and* as a list. A refused account is now refused by name
 (AC127–AC132).
 
+The **eighteenth pass** (2026-11-05) is the car's **own** browser and the
+car's **own** keyboard. CarPlay has **no web template** — there is no web
+template in `CarPlay.framework` at all, so a template browser can only ever be
+a remote control for the phone. The app's own car screen — the one with a real
+`WKWebView` — lives in the **external-display** scene, and the app asks the
+system for it when the CarPlay scene connects (AC159–AC162). The **keyboard**
+is the car's, too: `CPSearchTemplate` has no keyboard of its own, and the one
+that comes up floats over the bottom of the list — so a row under it takes the
+key presses instead of the keyboard (the user's *"the keyboard clicks the row
+behind it"*). The address bar's list is **short** now: the way back, what the
+user typed, and a couple of matches; the whole catalogue stays in the Browser
+tab's own list, one tap away (AC163). And a site answers to its **name** as
+well as to its address — "HBO Max" is nowhere in "max.com" (AC164).
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -308,6 +322,12 @@ arrives as a string *and* as a list. A refused account is now refused by name
 | 156 | The address bar is **not filled over** what the user has typed | `ReviewRegressionTests` |
 | 157 | The browser's two search boxes keep **their own text** — the address bar and the start page's own box are two fields, not one | `ReviewRegressionTests` |
 | 158 | A page the **car** asks for comes to the phone — the share captures the phone's screen, so the page has to be on it | `CarPlaySearchTests` |
+| 159 | A page the car asks for opens in the car's **own** browser — CarPlay's templates cannot hold a web page, so the app's own car screen (a real `WKWebView`) is where a page runs | `CarDisplaySessionTests` |
+| 160 | A page falls back to the **phone** when the car has no screen of its own — the old path has to survive | `CarDisplaySessionTests` |
+| 161 | The app asks the system for the car's **own** screen — the external-display scene is opened only on request, and the ask happens once | `CarDisplaySessionTests` |
+| 162 | A page the car asks for goes to the car's **own** browser — the Browser tab is not a remote control for the iPhone | `CarPlayTemplateTests` |
+| 163 | The address bar's list stays **short** — the car's keyboard floats over the bottom of the list, and a row under it takes the key presses instead of the keyboard | `CarPlayTemplateTests` |
+| 164 | A site answers to its **name** as well as to its address — "HBO Max" is nowhere in "max.com" | `CarPlayTemplateTests` |
 
 ## Verification
 

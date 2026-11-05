@@ -986,6 +986,52 @@ it is set in `project.yml`.
   the templates are covered by the tests, and the last mile needs the phone
   on the bus.
 
+## Gotchas from the eighteenth pass (2026-11-05, the car's own browser and keyboard)
+
+- **There is no web template in CarPlay — there is no web template at all.**
+  `CarPlay.framework` on iOS 27 carries `CPActionSheetTemplate`,
+  `CPAlertTemplate`, `CPContactTemplate`, `CPGridTemplate`,
+  `CPInformationTemplate`, `CPListTemplate`, `CPMapTemplate`,
+  `CPNowPlayingTemplate`, `CPPointOfInterestTemplate`, `CPSearchTemplate` and
+  `CPTabBarTemplate` — and **nothing** that can hold a web page. A template
+  browser is a text field and a list of links, so it can only ever be a
+  **remote control for the phone**. The app's own car screen — the one with a
+  real `WKWebView`, the toolbar and the zoom control — lives in the
+  **external-display** scene (`ExternalDisplaySceneDelegate`), and the system
+  opens that scene **only when the app asks** for it.
+- **A phone refuses the second scene.** `UISceneSessionActivationRequest(role:)`
+  + `UIApplication.activateSceneSession(for:errorHandler:)` is the only way to
+  ask for the app's own car screen, and on a phone it answers *"The current
+  device does not support multiple scenes."* The app's own log says it
+  (`the car's own screen was refused: …`), so the question is answered by the
+  device's unified log, not by guessing. The ask is harmless where it is
+  refused — the fallback is the phone.
+- **`CPSearchTemplate` has no keyboard — the keyboard is the car's.**
+  The header carries `delegate` and nothing else; there is no `keyboard`
+  property and no way to bring one up. The keyboard that comes up floats over
+  the **bottom of the list**, and a **row under it takes the key presses**
+  instead of the keyboard (the user's *"the keyboard clicks the row behind
+  it"*). Measured on the simulator's 1920×1080 screen: the keyboard covers
+  the bottom ~27 % and a result row's band is **full width**, so a key press
+  lands on the row behind it. The fix is the app's: **keep the list short** —
+  a row that is not under the keyboard cannot steal a key press. The whole
+  catalogue belongs in the Browser tab's own list, one tap away.
+- **The simulator's floating keyboard is the car's, not the app's.** It is
+  drawn by the simulator's own `atve-kit` (`Assets/atve-kit/TextInput/
+  Keyboard.json` holds the key labels) and it is the same one Apple's own
+  CarPlay apps get. There is no "native keyboard" an app can ask for instead —
+  the app's only lever is what it puts **under** the keyboard.
+- **A site has to answer to its name.** The results matched the **address**
+  only, so "HBO Max", "Prime Video", "Sony LIV" and "iQIYI" found nothing:
+  "HBO Max" is nowhere in "max.com", and the name is what the user reads on
+  the row.
+- **`CPSessionConfiguration` cannot be asked for.** `limitedUserInterfaces`
+  (`.keyboard`, `.lists`) is the car's way of saying *"the keyboard here is a
+  limited one"* — but there is **no accessor** for a `CPSessionConfiguration`
+  on `CPInterfaceController`, on the scene or in UIKit (iOS 27 SDK), so the
+  app cannot read it. The short list is the app's own answer to the same
+  problem.
+
 ## Measurement traps (both of these caused wrong conclusions here)
 
 - **`set -o pipefail` turns `… | grep -q` into a false negative.** `grep -q` exits at

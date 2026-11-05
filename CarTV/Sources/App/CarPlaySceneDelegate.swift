@@ -76,6 +76,7 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     private func connect(interfaceController: CPInterfaceController, window: CPWindow?) {
         NSLog("DRIVEPLAY CarPlay scene connected")
+        carDisplayLog.notice("the CarPlay scene is connected")
         self.interfaceController = interfaceController
         self.carWindow = window
         window?.overrideUserInterfaceStyle = .dark
@@ -147,6 +148,12 @@ public final class CarPlaySceneDelegate: UIResponder,
         // phone stops asking the user to pick a route, because there is
         // nothing left to pick.
         PlaybackManager.shared.isCarConnected = true
+
+        // The car's **own** screen: the app's car UI with a real browser and a
+        // video surface. The template scene cannot show a page (there is no
+        // web template in CarPlay), so without this the Browser tab is only a
+        // remote control for the phone.
+        CarDisplaySession.shared.requestCarScreen()
 
         // A picture that is **already on the car's display** stays there: the
         // phone stops drawing it, so it is not shown twice. A picture that is
@@ -376,8 +383,8 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
-    /// A page of the browser opens on the phone — the car has no web view of
-    /// its own — and the screen share carries it to the car.
+    /// A page of the browser opens — on the car's **own** screen when it has
+    /// one, and on the phone otherwise (where the screen share carries it).
     func openOnPhone(address: String) {
         browserSearch?.openAddress(address)
     }

@@ -215,6 +215,15 @@ extension InCarAutomotiveController {
         self.view.layoutIfNeeded()
     }
     
+    /// Opens a page in the car's **own** browser.
+    ///
+    /// This is the browser that runs on the car's display: the browser tab
+    /// first — it brings the browser's own chrome up — and then the page.
+    public func open(address: URL) {
+        switchTab(.browser)
+        openBrowser(url: address)
+    }
+
     public func openBrowser(url: URL) {
         self.view.isHidden = false
         self.browserContainer.isHidden = false

@@ -5,7 +5,7 @@ import Combine
 import ReplayKit
 
 // MARK: - In-Car Automotive Root Controller
-public final class InCarAutomotiveController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
+public final class InCarAutomotiveController: UIViewController, WKNavigationDelegate, UITextFieldDelegate, CarBrowserScreen {
     
     // MARK: - Enums
     public enum ActiveTab: Int {
