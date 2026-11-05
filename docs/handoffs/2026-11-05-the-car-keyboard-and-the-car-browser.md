@@ -71,15 +71,24 @@ from the device list, and whether the phone can be driven is asked of
 `xcodebuild -showdestinations`.
 
 ## In progress
-- The **device suite** for this round: queued behind the cable. The phone is
-  off the USB bus (`devicectl` says *unavailable*, `idevice_id -l` is empty).
+- The **device suite** for this round **ran** (14:02–14:12): **175 passed,
+  8 skipped, 6 failed**. The six are **the app process being killed
+  mid-test**, not assertion failures — no crash report was written, and the
+  previous instance was still holding the relay port when the next one
+  started, so it had been **suspended in the background** (the phone locked
+  itself, or it was picked up). None of the six touches the code this round
+  changed, and the new `CarDisplaySessionTests` **passed** on the phone. The
+  re-run needs a phone that is plugged in, unlocked and **left alone** for
+  ten minutes.
 - The **manual test on the car**: the user is testing by hand (see below).
 
 ## Blocked
-- The phone is off the bus, so the CarPlay Simulator has no device to attach
-  to and the device suite cannot run. The **cable** is the blocker, not the
-  code. The waiter is running and picks the phone up the moment it is a
-  destination again.
+- The phone is off the bus again (`devicectl`: *unavailable*, last seen
+  14:14), so the suite cannot be re-run and the CarPlay Simulator has no
+  device to attach to. The **cable** is the blocker, not the code.
+- The re-run also has to **wait for the manual test** — a suite that starts
+  while the user is driving the car's display takes the phone's screen over
+  and ruins the test they are doing.
 
 ## Files touched
 - `CarTV/Sources/App/CarDisplaySession.swift` (new)
@@ -119,9 +128,11 @@ from the device list, and whether the phone can be driven is asked of
 - The **CarPlay Simulator**: the car's own screen, the floating keyboard and
   the catalogue were measured **on the car's display** — the geometry in
   "Done" is read off the simulator's window, not guessed.
-- The **device suite**: the newest run on the phone is the seventeenth pass's
-  (**181 tests**, 7 skipped, **0 failures**). This round's run is **queued**
-  behind the cable — the script now waits for the link.
+- The **device suite**: this round's run **happened** — **175 passed, 8
+  skipped, 6 failed** (14:02–14:12). The six are the app process killed,
+  not assertion failures; the details and the evidence are in the review
+  (§1.27 fault 11). The newest run that was **fully green** is the
+  seventeenth pass's (**181 tests**, 7 skipped, **0 failures**).
 - The **fixed gate is proven both ways**: the run under the *old* script
   handed xcodebuild the phone's id while the phone was off the bus and died
   with *"Unable to find a destination matching the provided destination
@@ -135,7 +146,10 @@ from the device list, and whether the phone can be driven is asked of
 
 ## Next steps for next session
 1. Plug the cable in (or make sure the phone is on the same network) and let
-   `scripts/device_test.sh` run — it is waiting for the phone now.
+   `scripts/device_test.sh` run — it is waiting for the phone now. The phone
+   must be **unlocked and left alone** for the ten minutes the run takes:
+   six tests died with the app in the last run because the phone was
+   backgrounded (see §1.27 fault 11 of the review).
 2. On the car: Browser tab → *"Search or type a URL"* → **type**. The
    characters must land in the search field and the row behind must **not** be
    selected. Then type a site's **name** ("HBO Max", "Prime Video",
