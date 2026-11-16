@@ -81,4 +81,74 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
         XCTAssertEqual(CarPlayTab.favorites.symbol, "heart.fill")
         XCTAssertEqual(CarPlayTab.cast.symbol, "airplayvideo")
     }
+
+    // MARK: - Experimental CarPlay Window Scene Browser Tests
+
+    func test_carplay_window_scene_role_registered_in_info_plist() throws {
+        guard let infoPlistPath = Bundle.main.path(forResource: "Info", ofType: "plist") ??
+              Bundle(for: Self.self).path(forResource: "Info", ofType: "plist"),
+              let plistData = FileManager.default.contents(atPath: infoPlistPath),
+              let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+              let sceneManifest = plist["UIApplicationSceneManifest"] as? [String: Any],
+              let sceneConfigs = sceneManifest["UISceneConfigurations"] as? [String: Any] else {
+            let manifest = Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any]
+            let configs = manifest?["UISceneConfigurations"] as? [String: Any]
+            let carPlayWindowScenes = configs?["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
+            XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
+            let firstConfig = carPlayWindowScenes?.first
+            XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
+            return
+        }
+
+        let carPlayWindowScenes = sceneConfigs["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
+        XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
+        let firstConfig = carPlayWindowScenes?.first
+        XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
+    }
+
+    @MainActor
+    func test_carplay_web_view_controller_lifecycle_and_components() {
+        let webVC = CarPlayWebViewController()
+        XCTAssertNotNil(webVC.view)
+        webVC.view.layoutIfNeeded()
+
+        // Verify webview and subviews
+        XCTAssertNotNil(webVC.currentWebView)
+        XCTAssertTrue(webVC.currentWebView is WKWebView)
+        XCTAssertNotNil(webVC.keyboard)
+        XCTAssertTrue(webVC.keyboard is CarPlayFloatingKeyboardView)
+        XCTAssertNotNil(webVC.address)
+        XCTAssertNotNil(webVC.progress)
+        XCTAssertNotNil(webVC.lockOverlay)
+
+        // Clean up
+        webVC.shutDown()
+    }
+
+    @MainActor
+    func test_carplay_floating_keyboard_delegate_interaction() {
+        let webVC = CarPlayWebViewController()
+        _ = webVC.view
+        webVC.view.layoutIfNeeded()
+
+        let keyboard = webVC.keyboard
+
+        // Verify entering text, delete, clear, and dismiss do not crash
+        webVC.floatingKeyboard(keyboard, didEnterText: "test")
+        webVC.floatingKeyboardDidTapDelete(keyboard)
+        webVC.floatingKeyboardDidTapClear(keyboard)
+        webVC.floatingKeyboard(keyboard, didSelectQuickItem: "google.com")
+        webVC.floatingKeyboardDidTapDismiss(keyboard)
+
+        webVC.shutDown()
+    }
+
+    func test_carplay_destination_parsing() {
+        // Valid URL
+        XCTAssertEqual(CarPlayWebViewController.destination(for: "https://apple.com")?.absoluteString, "https://apple.com")
+        // Domain shortcut
+        XCTAssertEqual(CarPlayWebViewController.destination(for: "apple.com")?.absoluteString, "https://apple.com")
+        // Query search fallback
+        XCTAssertTrue(CarPlayWebViewController.destination(for: "weather in cupertino")?.absoluteString.contains("google.com/search") == true)
+    }
 }

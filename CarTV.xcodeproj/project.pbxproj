@@ -106,6 +106,7 @@
 		E6E2920198A3880CD88E5952 /* DrivePlayRealBrowserViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96BED9119E3E0A56016EB608 /* DrivePlayRealBrowserViewController.swift */; };
 		E6EEEF646628A4DFD9C7F63F /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B2487BFCC418B47CB486D2 /* MainTabView.swift */; };
 		E7EBDF312439ADB7EE792676 /* CarPlayVideoViewController+Browser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 895AE27A7506C4979F2E27BC /* CarPlayVideoViewController+Browser.swift */; };
+		EEF95FCE77626A738EE06DBE /* CarPlayWindowSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D07EE9D6A0304D9C6C6306B4 /* CarPlayWindowSceneDelegate.swift */; };
 		F6C3A3FF7DAAB1498E81DF21 /* AdBlockerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AA96E910289A373C569462 /* AdBlockerEngine.swift */; };
 		F73B2DBBF62DD6E5E7BE39DD /* CarPlayVideoViewController+Mirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A52BA90212D15056877DC5 /* CarPlayVideoViewController+Mirror.swift */; };
 		F7B8E5F425EDCEE5EED60D2E /* CarPlayVideoViewController+Video.swift in Sources */ = {isa = PBXBuildFile; fileRef = EECAD3E8610D86FEF263F945 /* CarPlayVideoViewController+Video.swift */; };
@@ -240,6 +241,7 @@
 		C7149E70F9021F800ABB8C80 /* ScreenRelay.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ScreenRelay.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C7B1B7AE9AD32CC961D94B71 /* M3UParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M3UParser.swift; sourceTree = "<group>"; };
 		CCD257F1CF39EBF846F55A92 /* StreamHealthSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamHealthSectionView.swift; sourceTree = "<group>"; };
+		D07EE9D6A0304D9C6C6306B4 /* CarPlayWindowSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayWindowSceneDelegate.swift; sourceTree = "<group>"; };
 		D0DDE39B67775591C563E349 /* CarTV.video.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarTV.video.entitlements; sourceTree = "<group>"; };
 		D6CE57B593B4617337B6035F /* FavoritesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesView.swift; sourceTree = "<group>"; };
 		DA479F011694BDFE1C4D89D2 /* CarTVTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CarTVTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -470,6 +472,7 @@
 			children = (
 				49D60FD6B6D45FBD7B0587F4 /* AppTabSelection.swift */,
 				A59C540F931324D6BBFFF1FE /* CarPlaySceneDelegate.swift */,
+				D07EE9D6A0304D9C6C6306B4 /* CarPlayWindowSceneDelegate.swift */,
 				676D6A625698B40DA8B1E3C7 /* CarTVApp.swift */,
 				C5649ACEB1F2928E3675B67B /* ExternalDisplaySceneDelegate.swift */,
 			);
@@ -683,6 +686,7 @@
 				D9A138E7317B283B44A7816A /* CarPlayVideoViewController+TopBar.swift in Sources */,
 				F7B8E5F425EDCEE5EED60D2E /* CarPlayVideoViewController+Video.swift in Sources */,
 				4BB74C05702DA6E5CDF56E69 /* CarPlayVideoViewController.swift in Sources */,
+				EEF95FCE77626A738EE06DBE /* CarPlayWindowSceneDelegate.swift in Sources */,
 				07BC1985FDD6C71F85F3C3FD /* CarTVApp.swift in Sources */,
 				36E24AD7E8763DE963625137 /* CastToCarView.swift in Sources */,
 				7945F8B3C334AA3553EF487E /* Channel.swift in Sources */,
