@@ -13,39 +13,32 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
 
         // Verify CarPlay actions do not modify handset tab selection
         let sceneDelegate = CarPlaySceneDelegate()
-        sceneDelegate.handleCarPlayWebSelection("https://m.youtube.com")
-        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay web selection must not alter handset active tab")
+        sceneDelegate.togglePlayback()
+        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay playback toggle must not alter handset active tab")
 
-        sceneDelegate.handleCarPlayWebSelection("google")
-        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay discovery selection must not alter handset active tab")
-
-        sceneDelegate.handleCarPlayWebSelection("twitch")
-        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay Twitch hub must not alter handset active tab")
+        sceneDelegate.togglePicture()
+        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay picture toggle must not alter handset active tab")
 
         handsetTabs.tab = .vault
-        sceneDelegate.handleCarPlayWebSelection("https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")
+        let missing = URL(fileURLWithPath: "/tmp/driveplay-no-such-stream.m3u8")
+        let channel = Channel(name: "Test", streamURL: missing, groupTitle: "News")
+        sceneDelegate.play(channel: channel)
         XCTAssertEqual(handsetTabs.tab, .vault, "CarPlay video stream playback must not alter handset active tab")
     }
 
     @MainActor
-    func test_carplay_address_bar_independent_from_handset_active_url() {
+    func test_handset_browser_independent_tabs_and_state() {
         let tabManager = BrowserTabManager.shared
-        tabManager.activeTabURL = "https://sensitive-handset-portal.internal"
+        let originalCount = tabManager.tabs.count
+        let originalActive = tabManager.activeTabURL
 
-        let search = CarPlayBrowserSearch()
-        let expectation = expectation(description: "Search results updated")
-        
-        search.searchTemplate(CPSearchTemplate(), updatedSearchText: "portal") { results in
-            // None of the results should contain the handset's private active tab URL
-            let hasHandsetLeak = results.contains { item in
-                (item.detailText ?? "").contains("sensitive-handset-portal.internal") ||
-                (item.text ?? "").contains("On the phone now")
-            }
-            XCTAssertFalse(hasHandsetLeak, "CarPlay address bar search must be decoupled from handset active tab URL")
-            expectation.fulfill()
-        }
+        tabManager.createNewTab(urlString: "https://duckduckgo.com")
+        XCTAssertEqual(tabManager.tabs.count, originalCount + 1)
+        XCTAssertEqual(tabManager.activeTabURL, "https://duckduckgo.com")
 
-        wait(for: [expectation], timeout: 2.0)
+        // Clean up
+        tabManager.closeTab(at: tabManager.tabs.count - 1)
+        tabManager.activeTabURL = originalActive
     }
 
     @MainActor
@@ -83,65 +76,9 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
 
     func test_carplay_tabs_honest_naming_and_icons() {
         let tabs = CarPlayTab.allCases
-        XCTAssertEqual(tabs.map(\.rawValue), ["Home", "Favorites", "Cast", "Web Video"])
-        XCTAssertEqual(CarPlayTab.browser.rawValue, "Web Video")
-        XCTAssertEqual(CarPlayTab.browser.symbol, "play.rectangle.on.rectangle.fill")
-    }
-
-    // MARK: - Real CarPlay WebKit Browser Tests
-
-    func test_carplay_window_scene_role_registered_in_info_plist() throws {
-        guard let infoPlistPath = Bundle.main.path(forResource: "Info", ofType: "plist") ??
-              Bundle(for: Self.self).path(forResource: "Info", ofType: "plist"),
-              let plistData = FileManager.default.contents(atPath: infoPlistPath),
-              let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
-              let sceneManifest = plist["UIApplicationSceneManifest"] as? [String: Any],
-              let sceneConfigs = sceneManifest["UISceneConfigurations"] as? [String: Any] else {
-            // Alternatively test from Bundle.main.infoDictionary
-            let manifest = Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any]
-            let configs = manifest?["UISceneConfigurations"] as? [String: Any]
-            let carPlayWindowScenes = configs?["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
-            XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
-            let firstConfig = carPlayWindowScenes?.first
-            XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
-            return
-        }
-
-        let carPlayWindowScenes = sceneConfigs["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
-        XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
-        let firstConfig = carPlayWindowScenes?.first
-        XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
-    }
-
-    @MainActor
-    func test_carplay_web_view_controller_lifecycle_and_components() {
-        let webVC = CarPlayWebViewController()
-        XCTAssertNotNil(webVC.view)
-        webVC.view.layoutIfNeeded()
-
-        // Verify webview and subviews
-        let subviews = webVC.view.subviews
-        let hasWebView = subviews.contains { $0 is WKWebView }
-        XCTAssertTrue(hasWebView, "CarPlayWebViewController must contain a real WKWebView")
-
-        let hasKeyboard = subviews.contains { $0 is CarPlayFloatingKeyboardView }
-        XCTAssertTrue(hasKeyboard, "CarPlayWebViewController must contain an on-screen CarPlayFloatingKeyboardView")
-    }
-
-    @MainActor
-    func test_carplay_floating_keyboard_delegate_interaction() {
-        let webVC = CarPlayWebViewController()
-        _ = webVC.view
-        webVC.view.layoutIfNeeded()
-
-        let keyboard = CarPlayFloatingKeyboardView()
-        keyboard.delegate = webVC
-
-        // Verify entering text, delete, clear, and dismiss do not crash
-        webVC.floatingKeyboard(keyboard, didEnterText: "test")
-        webVC.floatingKeyboardDidTapDelete(keyboard)
-        webVC.floatingKeyboardDidTapClear(keyboard)
-        webVC.floatingKeyboard(keyboard, didSelectQuickItem: "google.com")
-        webVC.floatingKeyboardDidTapDismiss(keyboard)
+        XCTAssertEqual(tabs.map(\.rawValue), ["Home", "Favorites", "Cast"])
+        XCTAssertEqual(CarPlayTab.home.symbol, "house.fill")
+        XCTAssertEqual(CarPlayTab.favorites.symbol, "heart.fill")
+        XCTAssertEqual(CarPlayTab.cast.symbol, "airplayvideo")
     }
 }

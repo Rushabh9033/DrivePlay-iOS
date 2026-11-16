@@ -32,16 +32,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     private var homeTemplate: CPListTemplate?
     private var favoritesTemplate: CPListTemplate?
     private var castTemplate: CPListTemplate?
-    private var browserTemplate: CPListTemplate?
     private var searchTemplate: CPSearchTemplate?
-    /// The Browser tab's own delegate — the search field in the **pushed**
-    /// address bar is the car's address bar.
-    private var browserSearch: CarPlayBrowserSearch?
-    /// The car's address bar — the only CarPlay chrome with a text field.
-    ///
-    /// It is **pushed** onto the stack: the tab bar rejects a search template
-    /// (`-validateTemplates:` raises an `NSException` and the app dies).
-    private var browserAddressBar: CPSearchTemplate?
 
     // MARK: - Scene connection
 
@@ -106,13 +97,6 @@ public final class CarPlaySceneDelegate: UIResponder,
         // the phone shows now and the app's own sites. The address bar itself
         // is a search template, and the tab bar rejects one — so it is pushed
         // onto the stack instead.
-        let browserSearchDelegate = browserSearch ?? CarPlayBrowserSearch()
-        browserSearch = browserSearchDelegate
-        browserSearchDelegate.dismissAddressBar = { [weak self] in self?.popBrowserAddressBar() }
-        let browser = Self.makeTemplate(tab: .browser,
-                                        sections: CarPlayTemplates.browserSections(
-                                            currentURL: "",
-                                            owner: self))
         NSLog("DRIVEPLAY car screen: scale %.2f, card %.0fx%.0f, row %.0fx%.0f, " +
               "car allows %d items in %d sections; built in %.0f ms",
               CarPlayArtwork.displayScale,
@@ -128,9 +112,6 @@ public final class CarPlaySceneDelegate: UIResponder,
             home.trailingNavigationBarButtons = [
                 CPBarButton(image: magImage, handler: { [weak self] _ in self?.pushChannelSearch() })
             ]
-            browser.trailingNavigationBarButtons = [
-                CPBarButton(image: magImage, handler: { [weak self] _ in self?.pushBrowserAddressBar() })
-            ]
         }
         home.emptyViewTitleVariants = ["No channels"]
         home.emptyViewSubtitleVariants = ["Add a playlist source in the DrivePlay app"]
@@ -140,9 +121,8 @@ public final class CarPlaySceneDelegate: UIResponder,
         self.homeTemplate = home
         self.favoritesTemplate = favorites
         self.castTemplate = cast
-        self.browserTemplate = browser
 
-        let bar = Self.makeTabBar([home, favorites, cast, browser])
+        let bar = Self.makeTabBar([home, favorites, cast])
         bar.delegate = self
         tabBarTemplate = bar
 
@@ -185,9 +165,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         homeTemplate = nil
         favoritesTemplate = nil
         castTemplate = nil
-        browserTemplate = nil
         searchTemplate = nil
-        browserAddressBar = nil
     }
 
     // MARK: - The tabs
@@ -265,13 +243,6 @@ public final class CarPlaySceneDelegate: UIResponder,
                                                                   prefersVideo: Self.isEntitledToVideo))
     }
 
-    private func refreshBrowser() {
-        browserTemplate?.updateSections(CarPlayTemplates.browserSections(
-            currentURL: "",
-            owner: self
-        ))
-    }
-
     /// The state the Cast tab shows — read from the app, not guessed.
     private func currentCastState() -> CarPlayCastState {
         let playback = PlaybackManager.shared
@@ -293,8 +264,6 @@ public final class CarPlaySceneDelegate: UIResponder,
             refreshCatalogue()
         } else if selectedTemplate === castTemplate {
             refreshCast()
-        } else if selectedTemplate === browserTemplate {
-            refreshBrowser()
         }
     }
 
@@ -351,30 +320,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
-    // MARK: - The car's address bar & discovery
-
-    /// The address bar of the car's browser.
-    ///
-    /// Pushes a `CPSearchTemplate` onto the CarPlay stack with live search and keyboard input.
-    func pushBrowserAddressBar() {
-        guard let controller = interfaceController else { return }
-        let searchDelegate = browserSearch ?? CarPlayBrowserSearch()
-        browserSearch = searchDelegate
-        searchDelegate.dismissAddressBar = { [weak self] in self?.popBrowserAddressBar() }
-        let template = CPSearchTemplate()
-        template.delegate = searchDelegate
-        browserAddressBar = template
-        controller.pushTemplate(template, animated: true) { success, error in
-            if !success {
-                NSLog("DRIVEPLAY push browser address bar failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    /// The address bar goes back to the list it was pushed from.
-    private func popBrowserAddressBar() {
-        popTopTemplate("the browser address bar")
-    }
+    // MARK: - Navigation
 
     /// Goes back one template.
     ///
@@ -387,229 +333,6 @@ public final class CarPlaySceneDelegate: UIResponder,
                 NSLog("DRIVEPLAY pop %@ failed: %@", what, String(describing: error))
             }
         }
-    }
-
-    /// A page of the browser opens on the phone.
-    func openOnPhone(address: String) {
-        handleCarPlayWebSelection(address)
-    }
-
-    func openInCarBrowser(address: String) {
-        handleCarPlayWebSelection(address)
-    }
-
-    func openInCarBrowserWithKeyboard() {
-        pushBrowserAddressBar()
-    }
-
-    public func pushYouTubeHub() {
-        guard let controller = interfaceController else { return }
-        
-        var items: [CPListItem] = []
-        
-        let searchItem = CPListItem(text: "Search YouTube...", detailText: "Find live videos and creators", image: UIImage(systemName: "magnifyingglass"))
-        searchItem.accessoryType = .disclosureIndicator
-        searchItem.handler = { [weak self] _, completion in
-            self?.pushBrowserAddressBar()
-            completion()
-        }
-        items.append(searchItem)
-        
-        let store = PlaylistStore.shared
-        let liveStreams = store.channels.filter {
-            $0.name.localizedCaseInsensitiveContains("youtube") ||
-            $0.name.localizedCaseInsensitiveContains("live") ||
-            $0.groupTitle.localizedCaseInsensitiveContains("live")
-        }
-        
-        for ch in liveStreams.prefix(15) {
-            let item = CarPlayTemplates.channelItem(ch, owner: self, prefersVideo: Self.isEntitledToVideo)
-            items.append(item)
-        }
-        
-        if items.count == 1 {
-            let sample = Channel(
-                name: "YouTube Live Stream",
-                streamURL: URL(string: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")!,
-                groupTitle: "YouTube"
-            )
-            items.append(CarPlayTemplates.channelItem(sample, owner: self, prefersVideo: Self.isEntitledToVideo))
-        }
-        
-        let section = CPListSection(items: items, header: "YouTube Feeds", sectionIndexTitle: nil)
-        let template = CPListTemplate(title: "YouTube", sections: [section])
-        
-        controller.pushTemplate(template, animated: true) { success, error in
-            if !success {
-                NSLog("DRIVEPLAY push YouTube template failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    public func pushGoogleDiscovery() {
-        guard let controller = interfaceController else { return }
-        
-        var items: [CPListItem] = []
-        
-        let searchItem = CPListItem(text: "Search Google...", detailText: "Enter a query on CarPlay keyboard", image: UIImage(systemName: "magnifyingglass"))
-        searchItem.accessoryType = .disclosureIndicator
-        searchItem.handler = { [weak self] _, completion in
-            self?.pushBrowserAddressBar()
-            completion()
-        }
-        items.append(searchItem)
-        
-        let newsItem = CPListItem(text: "Top News & Headlines", detailText: "Latest global updates", image: UIImage(systemName: "newspaper.fill"))
-        newsItem.accessoryType = .disclosureIndicator
-        newsItem.handler = { [weak self] _, completion in
-            self?.pushWebSearchResults(query: "News")
-            completion()
-        }
-        items.append(newsItem)
-        
-        let techItem = CPListItem(text: "Technology & Science", detailText: "Trending tech news", image: UIImage(systemName: "cpu.fill"))
-        techItem.accessoryType = .disclosureIndicator
-        techItem.handler = { [weak self] _, completion in
-            self?.pushWebSearchResults(query: "Technology")
-            completion()
-        }
-        items.append(techItem)
-        
-        let sportsItem = CPListItem(text: "Sports & Racing", detailText: "Scores and motorsport", image: UIImage(systemName: "flag.checkered.2.crossed"))
-        sportsItem.accessoryType = .disclosureIndicator
-        sportsItem.handler = { [weak self] _, completion in
-            self?.pushWebSearchResults(query: "Sports")
-            completion()
-        }
-        items.append(sportsItem)
-        
-        let section = CPListSection(items: items, header: "Google Web Discovery", sectionIndexTitle: nil)
-        let template = CPListTemplate(title: "Google", sections: [section])
-        
-        controller.pushTemplate(template, animated: true) { success, error in
-            if !success {
-                NSLog("DRIVEPLAY push Google template failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    public func pushTwitchHub() {
-        guard let controller = interfaceController else { return }
-        
-        var items: [CPListItem] = []
-        
-        let searchItem = CPListItem(text: "Search Twitch...", detailText: "Find gaming channels", image: UIImage(systemName: "magnifyingglass"))
-        searchItem.accessoryType = .disclosureIndicator
-        searchItem.handler = { [weak self] _, completion in
-            self?.pushBrowserAddressBar()
-            completion()
-        }
-        items.append(searchItem)
-        
-        let store = PlaylistStore.shared
-        let gamingStreams = store.channels.filter {
-            $0.name.localizedCaseInsensitiveContains("gaming") ||
-            $0.name.localizedCaseInsensitiveContains("twitch") ||
-            $0.name.localizedCaseInsensitiveContains("esport") ||
-            $0.groupTitle.localizedCaseInsensitiveContains("gaming")
-        }
-        
-        for ch in gamingStreams.prefix(15) {
-            let item = CarPlayTemplates.channelItem(ch, owner: self, prefersVideo: Self.isEntitledToVideo)
-            items.append(item)
-        }
-        
-        if items.count == 1 {
-            let sample = Channel(
-                name: "Twitch Esports Arena Live",
-                streamURL: URL(string: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")!,
-                groupTitle: "Twitch"
-            )
-            items.append(CarPlayTemplates.channelItem(sample, owner: self, prefersVideo: Self.isEntitledToVideo))
-        }
-        
-        let section = CPListSection(items: items, header: "Twitch Gaming", sectionIndexTitle: nil)
-        let template = CPListTemplate(title: "Twitch", sections: [section])
-        
-        controller.pushTemplate(template, animated: true) { success, error in
-            if !success {
-                NSLog("DRIVEPLAY push Twitch template failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    public func pushWebSearchResults(query: String) {
-        guard let controller = interfaceController else { return }
-        
-        let store = PlaylistStore.shared
-        let matching = store.channels.filter {
-            $0.name.localizedCaseInsensitiveContains(query) ||
-            $0.groupTitle.localizedCaseInsensitiveContains(query)
-        }
-        
-        var items: [CPListItem] = []
-        if !matching.isEmpty {
-            for ch in matching.prefix(20) {
-                items.append(CarPlayTemplates.channelItem(ch, owner: self, prefersVideo: Self.isEntitledToVideo))
-            }
-        } else {
-            let sample = Channel(
-                name: "Web Stream: \(query)",
-                streamURL: URL(string: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8")!,
-                groupTitle: "Web Search"
-            )
-            items.append(CarPlayTemplates.channelItem(sample, owner: self, prefersVideo: Self.isEntitledToVideo))
-        }
-        
-        let section = CPListSection(items: items, header: "Results for \"\(query)\"", sectionIndexTitle: nil)
-        let template = CPListTemplate(title: query, sections: [section])
-        
-        controller.pushTemplate(template, animated: true) { success, error in
-            if !success {
-                NSLog("DRIVEPLAY push web search results failed: %@", String(describing: error))
-            }
-        }
-    }
-
-    public func handleCarPlayWebSelection(_ address: String) {
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
-            if let url = URL(string: trimmed) {
-                let ch = Channel(
-                    name: "Web Stream",
-                    streamURL: url,
-                    groupTitle: "Web Stream"
-                )
-                play(channel: ch)
-                return
-            }
-        }
-        
-        let lower = trimmed.lowercased()
-        if lower.contains("youtube") {
-            pushYouTubeHub()
-            return
-        } else if lower.contains("google") {
-            pushGoogleDiscovery()
-            return
-        } else if lower.contains("twitch") {
-            pushTwitchHub()
-            return
-        }
-        
-        if trimmed.hasSuffix(".m3u8") || trimmed.hasSuffix(".mp4") {
-            let ch = Channel(
-                name: "Web Stream",
-                streamURL: URL(string: trimmed) ?? URL(string: "https://\(trimmed)")!,
-                groupTitle: "Web Stream"
-            )
-            play(channel: ch)
-            return
-        }
-        
-        pushWebSearchResults(query: trimmed)
     }
 
     /// The picture moves between the phone and the car.

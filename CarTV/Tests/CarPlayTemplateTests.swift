@@ -166,8 +166,6 @@ final class CarPlayTabTests: XCTestCase {
         var playbackToggled = false
         var shareStarted = false
         var shareStopped = false
-        var addressBarPushed = false
-        var opened: [String] = []
 
         func play(channel: Channel) { played.append(channel.name) }
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
@@ -177,8 +175,6 @@ final class CarPlayTabTests: XCTestCase {
         func togglePlayback() { playbackToggled = true }
         func startScreenShare() { shareStarted = true }
         func stopScreenShare() { shareStopped = true }
-        func pushBrowserAddressBar() { addressBarPushed = true }
-        func openOnPhone(address: String) { opened.append(address) }
     }
 
     private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {
@@ -213,10 +209,10 @@ final class CarPlayTabTests: XCTestCase {
         return false
     }
 
-    /// AC55: the car's screen is a tab bar with the tabs Home, Favorites, Cast
-    /// and Web Video — every one of them carries its own title and icon.
-    func test_AC55_the_car_screen_is_a_tab_bar_with_four_tabs() {
-        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast", "Web Video"])
+    /// AC55: the car's screen is a tab bar with the tabs Home, Favorites, and Cast —
+    /// every one of them carries its own title and icon.
+    func test_AC55_the_car_screen_is_a_tab_bar_with_three_tabs() {
+        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast"])
 
         for tab in CarPlayTab.allCases {
             let template = CarPlaySceneDelegate.makeTemplate(tab: tab, sections: [])
@@ -424,101 +420,6 @@ final class CarPlayTabTests: XCTestCase {
         XCTAssertTrue(spy.shareStopped)
     }
 
-    /// AC61: the Browser tab offers the sites of the app's own browser — the
-    /// same catalogue the phone shows — and opens them on the phone, because
-    /// CarPlay has no web view of its own.
-    func test_AC61_the_browser_tab_offers_the_sites_of_the_apps_own_browser() {
-        let browser = CarPlayBrowserSearch()
-
-        var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
-
-        let youtube = results.first { $0.text == "YouTube" }
-        XCTAssertNotNil(youtube, "the car's browser has to offer the phone's sites")
-
-        // The catalogue is the app's own — the phone's browser shows the same.
-        XCTAssertEqual(BrowserCatalog.videoAndMusic.first?.name, "YouTube")
-        XCTAssertTrue(BrowserCatalog.groups.contains { $0.title == "Live & Sports" })
-    }
-
-    /// AC99: the Browser tab's header is a **search bar** — the address bar of
-    /// the car's browser — and what the user types goes to the phone's own
-    /// browser, which turns a URL into a URL and anything else into a search.
-    func test_AC99_the_browsers_header_is_a_search_bar_that_redirects_to_the_phone() {
-        let browser = CarPlayBrowserSearch()
-        var opened: [String] = []
-        browser.openAddress = { opened.append($0) }
-
-        var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "sky sports") { results = $0 }
-        // The row is looked up **by its text**, never by its position: the
-        // search's own list carries the way back as its first row.
-        guard let row = results.first(where: { $0.text == "Open \"sky sports\"" }) else {
-            XCTFail("the browser's search bar found nothing")
-            return
-        }
-
-        browser.searchTemplate(CPSearchTemplate(), selectedResult: row) {}
-
-        XCTAssertEqual(opened, ["sky sports"],
-                       "what the user typed goes straight to the phone's browser")
-
-        // The phone's browser's own rule — the same one the car uses.
-        XCTAssertEqual(BrowserTabItem.destination(for: "example.com"), "https://example.com")
-        XCTAssertEqual(BrowserTabItem.destination(for: "sky sports"),
-                       "https://www.google.com/search?q=sky%20sports")
-    }
-
-    /// AC100: a site of the browser opens on the phone — the car has no web
-    /// view of its own, so the page is opened in the app's own browser.
-    func test_AC100_a_site_row_opens_on_the_phone() {
-        let browser = CarPlayBrowserSearch()
-        var opened: [String] = []
-        browser.openAddress = { opened.append($0) }
-
-        var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
-        guard let youtube = results.first(where: { $0.text == "YouTube" }) else {
-            XCTFail("the browser has no YouTube row")
-            return
-        }
-
-        browser.searchTemplate(CPSearchTemplate(), selectedResult: youtube) {}
-
-        XCTAssertEqual(opened, ["https://m.youtube.com"])
-    }
-
-    /// AC101: the Browser tab is a **list** — the way into the address bar,
-    /// the page the phone shows now, and the app's own sites.
-    ///
-    /// The tab bar rejects a search template (`-validateTemplates:` raises and
-    /// the app dies at every scene connect), so the tab is a list and the
-    /// address bar is pushed onto the stack.
-    func test_AC101_the_browser_tab_is_a_list_with_the_address_bar_and_the_sites() {
-        let spy = SpyActions()
-
-        let sections = CarPlayTemplates.browserSections(currentURL: "https://example.com/watch",
-                                                         owner: spy)
-
-        let top = items(in: sections[0]).map(\.text)
-        XCTAssertEqual(top, ["Search or type a URL", "On the phone now"],
-                       "the Browser tab opens with the address bar and the page the phone shows")
-
-        // The address bar is pushed — it is never a tab.
-        let addressBar = items(in: sections[0])[0]
-        addressBar.handler?(addressBar, {})
-        XCTAssertTrue(spy.addressBarPushed, "the address bar was not pushed onto the stack")
-
-        // A site of the app's own browser opens on the phone.
-        let all = sections.flatMap { items(in: $0) }
-        guard let youtube = all.first(where: { $0.text == "YouTube" }) else {
-            XCTFail("the browser has no YouTube row")
-            return
-        }
-        youtube.handler?(youtube, {})
-        XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
-    }
-
     /// AC102: the tab bar is built from **lists** only.
     ///
     /// A search template inside a tab bar is what killed the app; the tab bar
@@ -528,7 +429,7 @@ final class CarPlayTabTests: XCTestCase {
             CarPlaySceneDelegate.makeTemplate(tab: $0, sections: [])
         })
 
-        XCTAssertEqual(bar.templates.count, 4)
+        XCTAssertEqual(bar.templates.count, 3)
         for template in bar.templates {
             XCTAssertTrue(template is CPListTemplate,
                           "a tab that is not a list takes the app down")
@@ -863,27 +764,6 @@ final class CarPlaySearchTests: XCTestCase {
                        "the selected search result did not play its channel")
     }
 
-    /// AC141: the car's browser does not build its list again for every
-    /// keystroke.
-    ///
-    /// The search template hands the car a fresh list on **every keystroke**,
-    /// and every row carries a picture at the car's scale — so a list that is
-    /// built again for every character is what took the CarPlay scene down.
-    func test_AC141_the_cars_browser_does_not_build_its_list_again_for_every_keystroke() {
-        let browser = CarPlayBrowserSearch()
-
-        var first: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { first = $0 }
-        var second: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "y") { second = $0 }
-
-        let youtubeFirst = first.first { $0.text == "YouTube" }
-        let youtubeSecond = second.first { $0.text == "YouTube" }
-        XCTAssertNotNil(youtubeFirst, "the browser has no YouTube row")
-        XCTAssertTrue(youtubeFirst === youtubeSecond,
-                      "the row was built again, so its picture was drawn again")
-    }
-
     /// AC153: the channel search does not build its rows again for every
     /// keystroke.
     ///
@@ -919,37 +799,6 @@ final class CarPlaySearchTests: XCTestCase {
                       "the row was built again, so its picture was drawn again")
     }
 
-    /// AC154: the address bar has a way back to the list it was pushed from.
-    ///
-    /// A `CPSearchTemplate` does not conform to `CPBarButtonProviding` — it
-    /// cannot carry a navigation bar button — so the way back has to be a row
-    /// of the search's own list. Without one the car is stuck on the address
-    /// bar for ever.
-    func test_AC154_the_address_bar_has_a_way_back_to_the_sites() {
-        let browser = CarPlayBrowserSearch()
-        var opened: [String] = []
-        browser.openAddress = { opened.append($0) }
-        var dismissed = false
-        browser.dismissAddressBar = { dismissed = true }
-
-        var results: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "") { results = $0 }
-
-        let back = results.first { $0.text == "Back to sites" }
-        XCTAssertNotNil(back, "the address bar has no way back to the sites")
-
-        // Typing must not take the way out away.
-        var typed: [CPListItem] = []
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "you") { typed = $0 }
-        XCTAssertNotNil(typed.first { $0.text == "Back to sites" },
-                        "the way back is gone while the user is typing")
-
-        browser.searchTemplate(CPSearchTemplate(), selectedResult: back!) {}
-
-        XCTAssertTrue(dismissed, "the way back did not take the car out of the address bar")
-        XCTAssertTrue(opened.isEmpty, "the way back opened a page")
-    }
-
     /// AC142: the car page request records the address without starting screen relay.
     func test_AC142_the_phone_is_told_that_the_car_is_waiting_for_the_page() {
         let share = ScreenShareService(relay: ScreenRelayListener(port: 47313))
@@ -978,32 +827,6 @@ final class CarPlaySearchTests: XCTestCase {
 
         XCTAssertEqual(tabs.tab, .home,
                        "the phone unexpectedly switched tabs — CarPlay must not alter handset UI presentation")
-    }
-
-    /// Verifies that pressing the keyboard's search button in CarPlay triggers the search.
-    func test_keyboard_search_button_triggers_search() {
-        let browser = CarPlayBrowserSearch()
-        var opened: [String] = []
-        browser.openAddress = { opened.append($0) }
-        var dismissed = false
-        browser.dismissAddressBar = { dismissed = true }
-
-        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "https://google.com") { _ in }
-        browser.searchTemplateSearchButtonPressed(CPSearchTemplate())
-
-        XCTAssertEqual(opened, ["https://google.com"])
-        XCTAssertTrue(dismissed)
-    }
-
-    /// Verifies that CarPlay browser interactions keep the phone's tab intact.
-    func test_carplay_browser_interaction_preserves_handset_tab() {
-        let tabs = AppTabSelection.shared
-        tabs.tab = .settings
-
-        let browser = CarPlayBrowserSearch()
-        browser.openAddress("https://youtube.com")
-
-        XCTAssertEqual(tabs.tab, .settings, "handset tab must remain unchanged during CarPlay browsing")
     }
 }
 

@@ -30,12 +30,7 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> UISceneConfiguration {
         NSLog("DRIVEPLAY AppDelegate configurationForConnecting role: %@", connectingSceneSession.role.rawValue)
         
-        if connectingSceneSession.role.rawValue == "UIWindowSceneSessionRoleCarPlay" {
-            NSLog("DRIVEPLAY AppDelegate returning CarPlay Window Configuration for role: %@", connectingSceneSession.role.rawValue)
-            let config = UISceneConfiguration(name: "CarPlay Window Configuration", sessionRole: connectingSceneSession.role)
-            config.delegateClass = CarPlayWindowSceneDelegate.self
-            return config
-        } else if connectingSceneSession.role == .carTemplateApplication {
+        if connectingSceneSession.role == .carTemplateApplication {
             let config = UISceneConfiguration(name: "CarPlay Configuration", sessionRole: connectingSceneSession.role)
             config.delegateClass = CarPlaySceneDelegate.self
             return config

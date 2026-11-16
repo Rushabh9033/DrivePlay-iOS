@@ -290,19 +290,7 @@ public struct InAppBrowserView: View {
                 .foregroundColor(.accentColor)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                // 4. Send to Car Display
-                Button {
-                    sendCurrentPageToCar()
-                } label: {
-                    Image(systemName: "tv.and.mediabox")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(Color(red: 0.0, green: 0.816, blue: 0.400))
-                        .frame(width: 36, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("Play on Car Display")
-                
-                // 5. Quick New Tab (+)
+                // 4. Quick New Tab (+)
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         tabManager.createNewTab(urlString: "", dismissTabGrid: false)
@@ -317,7 +305,7 @@ public struct InAppBrowserView: View {
                         .contentShape(Rectangle())
                 }
                 
-                // 6. Tabs Switcher Button [N]
+                // 5. Tabs Switcher Button [N]
                 Button {
                     tabManager.isViewingTabGrid = true
                 } label: {
@@ -548,47 +536,6 @@ public struct InAppBrowserView: View {
     private var currentSite: String? {
         guard let url = tabManager.activeTab?.webView.url else { return nil }
         return AdBlockerEngine.siteKey(for: url)
-    }
-
-    // MARK: - In-Car Handoff
-
-    private func sendCurrentPageToCar() {
-        guard !tabManager.activeTabURL.isEmpty, let url = URL(string: tabManager.activeTabURL) else { return }
-
-        let destinationURL = Self.playerURL(for: url) ?? url
-        let title = !(tabManager.activeTab?.title.isEmpty ?? true) ? (tabManager.activeTab?.title ?? "Web Video") : "Web Stream"
-
-        let ch = Channel(
-            name: title,
-            streamURL: destinationURL,
-            groupTitle: "Web Stream"
-        )
-
-        // Hand off to car's video surface
-        PlaybackManager.shared.play(channel: ch, presentation: .hidden)
-        PlaybackManager.shared.handOffToCar()
-
-        NotificationCenter.default.post(
-            name: Notification.Name("DrivePlaySendToCar"),
-            object: nil,
-            userInfo: ["url": destinationURL]
-        )
-    }
-
-    private static func playerURL(for url: URL) -> URL? {
-        guard let host = url.host?.lowercased() else { return nil }
-        var videoID: String?
-        if host.contains("youtu.be") {
-            videoID = url.pathComponents.dropFirst().first
-        } else if host.contains("youtube.com") {
-            if url.path.hasPrefix("/shorts/") {
-                videoID = url.pathComponents.dropFirst(2).first
-            } else if let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems {
-                videoID = items.first { $0.name == "v" }?.value
-            }
-        }
-        guard let id = videoID, !id.isEmpty else { return nil }
-        return URL(string: "https://www.youtube.com/embed/\(id)?autoplay=1&playsinline=1&rel=0")
     }
 }
 
