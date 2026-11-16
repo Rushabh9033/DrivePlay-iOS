@@ -278,7 +278,7 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     public func openBrowser(url: URL? = nil) {
         let targetURL = url ?? URL(string: "https://example.com")!
-        NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", targetURL.absoluteString)
+        NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", CredentialRedactor.safeForLog(targetURL))
 
         CarDisplaySession.shared.requestCarScreen()
         CarDisplaySession.shared.open(address: targetURL.absoluteString)
@@ -357,7 +357,7 @@ public final class CarPlaySceneDelegate: UIResponder,
             if !success {
                 NSLog("DRIVEPLAY push browser page template failed: %@", String(describing: error))
             } else {
-                NSLog("DRIVEPLAY push browser page template succeeded for: %@", targetURL.absoluteString)
+                NSLog("DRIVEPLAY push browser page template succeeded for: %@", CredentialRedactor.safeForLog(targetURL))
             }
         }
     }
