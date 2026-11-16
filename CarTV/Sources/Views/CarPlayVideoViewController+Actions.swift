@@ -187,6 +187,10 @@ extension InCarAutomotiveController {
     }
     
     public func openBrowserHome() {
+        if isInteractive {
+            presentRealWebBrowser()
+            return
+        }
         videoContainer.isHidden = true
         playerVC.player?.pause()
         mirrorContainer.isHidden = true
@@ -224,6 +228,10 @@ extension InCarAutomotiveController {
     }
     
     public func openBrowser(url: URL) {
+        if isInteractive {
+            presentRealWebBrowser(url: url)
+            return
+        }
         videoContainer.isHidden = true
         playerVC.player?.pause()
         mirrorContainer.isHidden = true
