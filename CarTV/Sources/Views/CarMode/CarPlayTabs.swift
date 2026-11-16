@@ -15,13 +15,16 @@ protocol CarPlayTabActions: AnyObject {
     func togglePlayback()
     func startScreenShare()
     func stopScreenShare()
+    func openBrowser(url: URL?)
+    func closeBrowser()
 }
 
-/// The three tabs the car's screen is built from: Home, Favorites, and Cast.
+/// The four tabs the car's screen is built from: Home, Favorites, Cast, and Browser.
 enum CarPlayTab: String, CaseIterable {
     case home = "Home"
     case favorites = "Favorites"
     case cast = "Cast"
+    case browser = "Browser"
 
     /// The tab's icon — a template image, so the system paints it with its own
     /// colours. A tint of ours paints the whole tab bar green, and the car is
@@ -35,6 +38,7 @@ enum CarPlayTab: String, CaseIterable {
         case .home: return "house.fill"
         case .favorites: return "heart.fill"
         case .cast: return "airplayvideo"
+        case .browser: return "globe"
         }
     }
 }
@@ -509,6 +513,51 @@ enum CarPlayTemplates {
 
         let section = CPListSection(items: items, header: nil, sectionIndexTitle: nil)
         return CPListTemplate(title: title, sections: [section])
+    }
+
+    // MARK: - Browser
+
+    /// The dedicated browser section on CarPlay.
+    static func browserSections(owner: CarPlayTabActions?) -> [CPListSection] {
+        var items: [CPListTemplateItem] = []
+
+        let openBrowserItem = CPListItem(
+            text: "Launch Web Browser",
+            detailText: "https://example.com — Full car-screen web experience",
+            image: UIImage(systemName: "safari")
+        )
+        openBrowserItem.accessoryType = .disclosureIndicator
+        openBrowserItem.handler = { _, completion in
+            owner?.openBrowser(url: URL(string: "https://example.com"))
+            completion()
+        }
+        items.append(openBrowserItem)
+
+        let searchItem = CPListItem(
+            text: "Search the Web",
+            detailText: "Search Google directly with car keyboard",
+            image: UIImage(systemName: "magnifyingglass")
+        )
+        searchItem.accessoryType = .disclosureIndicator
+        searchItem.handler = { _, completion in
+            owner?.openBrowser(url: URL(string: "https://www.google.com"))
+            completion()
+        }
+        items.append(searchItem)
+
+        let closeItem = CPListItem(
+            text: "Close Browser",
+            detailText: "Return to Home, Favorites and Cast",
+            image: UIImage(systemName: "xmark.circle")
+        )
+        closeItem.handler = { _, completion in
+            owner?.closeBrowser()
+            completion()
+        }
+        items.append(closeItem)
+
+        let section = CPListSection(items: items, header: "CarPlay Web Browser", sectionIndexTitle: nil)
+        return [section]
     }
 }
 

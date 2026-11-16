@@ -76,10 +76,11 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
 
     func test_carplay_tabs_honest_naming_and_icons() {
         let tabs = CarPlayTab.allCases
-        XCTAssertEqual(tabs.map(\.rawValue), ["Home", "Favorites", "Cast"])
+        XCTAssertEqual(tabs.map(\.rawValue), ["Home", "Favorites", "Cast", "Browser"])
         XCTAssertEqual(CarPlayTab.home.symbol, "house.fill")
         XCTAssertEqual(CarPlayTab.favorites.symbol, "heart.fill")
         XCTAssertEqual(CarPlayTab.cast.symbol, "airplayvideo")
+        XCTAssertEqual(CarPlayTab.browser.symbol, "globe")
     }
 
     // MARK: - Experimental CarPlay Window Scene Browser Tests
@@ -150,5 +151,44 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
         XCTAssertEqual(CarPlayWebViewController.destination(for: "apple.com")?.absoluteString, "https://apple.com")
         // Query search fallback
         XCTAssertTrue(CarPlayWebViewController.destination(for: "weather in cupertino")?.absoluteString.contains("google.com/search") == true)
+    }
+
+    func test_carplay_parking_gate_cannot_be_bypassed_by_user_confirmation_during_motion() {
+        let gate = CarBrowserParkingGate()
+        XCTAssertTrue(gate.isLocked)
+
+        // 1. Simulate driving motion (speed = 15 m/s ≈ 54 km/h)
+        let movingLocation = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 37.33, longitude: -122.03),
+            altitude: 10,
+            horizontalAccuracy: 5,
+            verticalAccuracy: 5,
+            course: 0,
+            speed: 15.0,
+            timestamp: Date()
+        )
+        gate.locationManager(CLLocationManager(), didUpdateLocations: [movingLocation])
+
+        // 2. Attempt to bypass by calling confirmParked()
+        gate.confirmParked()
+
+        // 3. Must REMAIN locked!
+        XCTAssertTrue(gate.isLocked, "Parking gate must NEVER unlock via user confirmation while motion is detected")
+
+        // 4. Simulate stationary location (speed = 0 m/s) with fresh timestamp but within 15s motion cooldown
+        let stationaryLocation = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 37.33, longitude: -122.03),
+            altitude: 10,
+            horizontalAccuracy: 5,
+            verticalAccuracy: 5,
+            course: 0,
+            speed: 0.0,
+            timestamp: Date()
+        )
+        gate.locationManager(CLLocationManager(), didUpdateLocations: [stationaryLocation])
+
+        // During motion cooldown period, confirmParked must still reject
+        gate.confirmParked()
+        XCTAssertTrue(gate.isLocked, "Parking gate must remain locked during motion cooldown")
     }
 }

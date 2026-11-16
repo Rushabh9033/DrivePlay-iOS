@@ -94,7 +94,7 @@ public final class CarPlayWebViewController: UIViewController,
     private var keyboardVisible = false
     private var nativePixelLayout = false
     private var webCrashRetries = Set<ObjectIdentifier>()
-    private let gate = CarBrowserParkingGate()
+    let gate = CarBrowserParkingGate()
 
     public var currentWebView: WKWebView {
         if tabs.isEmpty {
@@ -827,62 +827,138 @@ public final class CarPlayWebViewController: UIViewController,
 /// Location and zero speed do NOT prove the gear is in Park: this is only a
 /// supplementary guard. Production car-integrated apps must enforce actual
 /// vehicle/safety state wherever the platform exposes it.
-private final class CarBrowserParkingGate: NSObject, CLLocationManagerDelegate {
+final class CarBrowserParkingGate: NSObject, CLLocationManagerDelegate {
     var onChange: ((Bool, String, Bool) -> Void)?
     private let manager = CLLocationManager()
     private var timer: Timer?
     private var confirmedByUser = false
     private var lastSample: Date?
-    private var eligible = true
-    var isLocked: Bool { !confirmedByUser || !eligible }
+    private var lastMotionTime: Date?
+    private var lastSpeed: CLLocationSpeed = -1.0
+    private var eligible = false
+
+    // Locked if user has not confirmed, vehicle is ineligible, or motion was detected
+    var isLocked: Bool {
+        if !eligible || isMotionActive {
+            return true
+        }
+        return !confirmedByUser
+    }
+
+    private var isMotionActive: Bool {
+        if lastSpeed > 0.8 { return true }
+        if let motionTime = lastMotionTime, Date().timeIntervalSince(motionTime) < 15.0 {
+            return true
+        }
+        return false
+    }
 
     func start() {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = kCLDistanceFilterNone
-        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+        if manager.authorizationStatus == .notDetermined {
+            manager.requestWhenInUseAuthorization()
+        }
         manager.startUpdatingLocation()
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             self?.checkStaleness()
         }
-        report(confirmedByUser ? "Parked use active." : "Please confirm parked status to browse.")
+        reportCurrentState()
     }
 
     func stop() {
-        timer?.invalidate(); timer = nil
+        timer?.invalidate()
+        timer = nil
         manager.stopUpdatingLocation()
         manager.delegate = nil
     }
 
     func confirmParked() {
+        // Strictly prevent user confirmation from bypassing vehicle movement or unverified state
+        guard !isMotionActive else {
+            reportCurrentState(overrideReason: "Cannot confirm parked: vehicle movement detected.")
+            return
+        }
+        guard eligible else {
+            reportCurrentState(overrideReason: "Acquiring GPS fix: stationary location required.")
+            return
+        }
+        guard let last = lastSample, Date().timeIntervalSince(last) < 10.0 else {
+            reportCurrentState(overrideReason: "GPS signal stale: waiting for fresh stationary fix.")
+            return
+        }
         confirmedByUser = true
-        eligible = true
-        report("Parked use confirmed.")
+        reportCurrentState()
     }
 
     private func checkStaleness() {
-        // Only run periodic background health check
+        // If GPS is stale (> 12 seconds without update), we cannot verify vehicle is stationary
+        if let last = lastSample, Date().timeIntervalSince(last) > 12.0 {
+            eligible = false
+            reportCurrentState(overrideReason: "GPS fix lost. Stationary confirmation paused.")
+            return
+        }
+        // If motion cooldown expired, allow confirmation again
+        if let motionTime = lastMotionTime, Date().timeIntervalSince(motionTime) >= 15.0 {
+            if lastSpeed >= 0 && lastSpeed <= 0.8 {
+                eligible = true
+                reportCurrentState()
+            }
+        }
     }
 
-    private func report(_ reason: String) {
-        onChange?(isLocked,
-                  isLocked ? "Browser available only while parked.\n" + reason : reason,
-                  !confirmedByUser)
+    private func reportCurrentState(overrideReason: String? = nil) {
+        let motion = isMotionActive
+        let locked = isLocked
+        let mayConfirm = eligible && !motion
+
+        let reason: String
+        if let override = overrideReason {
+            reason = override
+        } else if motion {
+            let speedKmh = max(0, lastSpeed * 3.6)
+            reason = "Vehicle motion detected (\(String(format: "%.1f", speedKmh)) km/h).\nBrowser is locked for driving safety."
+        } else if !eligible {
+            reason = "Awaiting confirmed stationary GPS signal..."
+        } else if !confirmedByUser {
+            reason = "Vehicle appears stationary.\nPlease confirm parked status to browse."
+        } else {
+            reason = "Parked use active."
+        }
+
+        onChange?(locked,
+                  locked ? "Browser available only while parked.\n" + reason : reason,
+                  mayConfirm && !confirmedByUser)
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         lastSample = Date()
-        // If speed indicates driving motion (> 3.0 m/s ≈ 11 km/h), lock immediately
-        if location.speed > 3.0 {
+        lastSpeed = location.speed
+
+        // If speed indicates driving motion (> 0.8 m/s ≈ 2.9 km/h), lock immediately
+        if location.speed > 0.8 {
             eligible = false
             confirmedByUser = false
-            report("Movement detected. Browser and media are paused.")
+            lastMotionTime = Date()
+            reportCurrentState()
             return
         }
-        if location.speed >= 0 && location.speed <= 1.0 {
-            eligible = true
+
+        // Stationary (speed 0 to 0.8 m/s) with valid accuracy
+        if location.speed >= 0 && location.speed <= 0.8 && location.horizontalAccuracy >= 0 && location.horizontalAccuracy < 50 {
+            if let motionTime = lastMotionTime, Date().timeIntervalSince(motionTime) < 15.0 {
+                // In safety cooldown period
+                eligible = false
+            } else {
+                eligible = true
+            }
+        } else if location.speed < 0 {
+            // Speed unavailable: conservative fallback
+            eligible = false
         }
+        reportCurrentState()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -890,11 +966,15 @@ private final class CarBrowserParkingGate: NSObject, CLLocationManagerDelegate {
         case .authorizedAlways, .authorizedWhenInUse:
             manager.startUpdatingLocation()
         default:
-            break
+            eligible = false
+            confirmedByUser = false
+            reportCurrentState(overrideReason: "Location permission required to verify parked status.")
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // No fix is not evidence of driving; keep state
+        // Location manager error: fail safe
+        eligible = false
+        reportCurrentState(overrideReason: "GPS error: cannot verify parked state.")
     }
 }

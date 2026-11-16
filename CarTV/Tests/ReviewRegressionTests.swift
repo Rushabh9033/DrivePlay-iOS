@@ -535,6 +535,8 @@ final class ReviewRegressionTests: XCTestCase {
         func togglePlayback() {}
         func startScreenShare() {}
         func stopScreenShare() {}
+        func openBrowser(url: URL?) {}
+        func closeBrowser() {}
         func pushBrowserAddressBar() {}
         func openOnPhone(address: String) {}
     }

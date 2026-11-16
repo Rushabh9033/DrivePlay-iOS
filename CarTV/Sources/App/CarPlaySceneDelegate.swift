@@ -32,6 +32,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     private var homeTemplate: CPListTemplate?
     private var favoritesTemplate: CPListTemplate?
     private var castTemplate: CPListTemplate?
+    private var browserTemplate: CPListTemplate?
     private var searchTemplate: CPSearchTemplate?
 
     // MARK: - Scene connection
@@ -93,6 +94,8 @@ public final class CarPlaySceneDelegate: UIResponder,
                                      sections: CarPlayTemplates.castSections(state: currentCastState(),
                                                                            owner: self,
                                                                            prefersVideo: Self.isEntitledToVideo))
+        let browser = Self.makeTemplate(tab: .browser,
+                                        sections: CarPlayTemplates.browserSections(owner: self))
         // The Browser tab is a **list**: the way into the address bar, the page
         // the phone shows now and the app's own sites. The address bar itself
         // is a search template, and the tab bar rejects one — so it is pushed
@@ -121,8 +124,9 @@ public final class CarPlaySceneDelegate: UIResponder,
         self.homeTemplate = home
         self.favoritesTemplate = favorites
         self.castTemplate = cast
+        self.browserTemplate = browser
 
-        let bar = Self.makeTabBar([home, favorites, cast])
+        let bar = Self.makeTabBar([home, favorites, cast, browser])
         bar.delegate = self
         tabBarTemplate = bar
 
@@ -165,6 +169,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         homeTemplate = nil
         favoritesTemplate = nil
         castTemplate = nil
+        browserTemplate = nil
         searchTemplate = nil
     }
 
@@ -264,7 +269,29 @@ public final class CarPlaySceneDelegate: UIResponder,
             refreshCatalogue()
         } else if selectedTemplate === castTemplate {
             refreshCast()
+        } else if selectedTemplate === browserTemplate {
+            openBrowser(url: URL(string: "https://example.com"))
         }
+    }
+
+    // MARK: - Browser Actions
+
+    public func openBrowser(url: URL? = nil) {
+        let targetURL = url ?? URL(string: "https://example.com")!
+        NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", targetURL.absoluteString)
+
+        CarDisplaySession.shared.requestCarScreen()
+        CarDisplaySession.shared.open(address: targetURL.absoluteString)
+
+        let closeButton = CPBarButton(title: "Close", handler: { [weak self] _ in
+            self?.closeBrowser()
+        })
+        browserTemplate?.leadingNavigationBarButtons = [closeButton]
+    }
+
+    public func closeBrowser() {
+        NSLog("DRIVEPLAY CarPlay closeBrowser requested: returning to Home")
+        interfaceController?.popToRootTemplate(animated: true) { _, _ in }
     }
 
     // MARK: - What a row asks for

@@ -175,6 +175,8 @@ final class CarPlayTabTests: XCTestCase {
         func togglePlayback() { playbackToggled = true }
         func startScreenShare() { shareStarted = true }
         func stopScreenShare() { shareStopped = true }
+        func openBrowser(url: URL?) {}
+        func closeBrowser() {}
     }
 
     private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {
@@ -209,10 +211,10 @@ final class CarPlayTabTests: XCTestCase {
         return false
     }
 
-    /// AC55: the car's screen is a tab bar with the tabs Home, Favorites, and Cast —
+    /// AC55: the car's screen is a tab bar with the tabs Home, Favorites, Cast, and Browser —
     /// every one of them carries its own title and icon.
     func test_AC55_the_car_screen_is_a_tab_bar_with_three_tabs() {
-        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast"])
+        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast", "Browser"])
 
         for tab in CarPlayTab.allCases {
             let template = CarPlaySceneDelegate.makeTemplate(tab: tab, sections: [])
