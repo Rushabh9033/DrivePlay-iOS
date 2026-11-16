@@ -178,6 +178,8 @@ final class CarPlayTabTests: XCTestCase {
         func openBrowser(url: URL?) {}
         func closeBrowser() {}
         func pushBrowserAddressBar() {}
+        func pushCurrentPageLinks() {}
+        func pushCurrentPageInputs() {}
     }
 
     private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {

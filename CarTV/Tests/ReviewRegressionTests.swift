@@ -538,6 +538,8 @@ final class ReviewRegressionTests: XCTestCase {
         func openBrowser(url: URL?) {}
         func closeBrowser() {}
         func pushBrowserAddressBar() {}
+        func pushCurrentPageLinks() {}
+        func pushCurrentPageInputs() {}
         func openOnPhone(address: String) {}
     }
 }

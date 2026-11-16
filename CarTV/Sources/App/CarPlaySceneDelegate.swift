@@ -222,6 +222,12 @@ public final class CarPlaySceneDelegate: UIResponder,
             .sink { [weak self] _ in self?.refreshCast() }
             .store(in: &cancellables)
 
+        // The car browser stream state
+        CarBrowserStream.shared.$isRunning
+            .combineLatest(CarBrowserStream.shared.$address)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshBrowserTab() }
+            .store(in: &cancellables)
     }
 
     /// The catalogue and the favourites are one thing: they come from the same
@@ -248,6 +254,10 @@ public final class CarPlaySceneDelegate: UIResponder,
                                                                   prefersVideo: Self.isEntitledToVideo))
     }
 
+    private func refreshBrowserTab() {
+        browserTemplate?.updateSections(CarPlayTemplates.browserSections(owner: self))
+    }
+
     /// The state the Cast tab shows — read from the app, not guessed.
     private func currentCastState() -> CarPlayCastState {
         let playback = PlaybackManager.shared
@@ -270,15 +280,22 @@ public final class CarPlaySceneDelegate: UIResponder,
         } else if selectedTemplate === castTemplate {
             refreshCast()
         } else if selectedTemplate === browserTemplate {
-            openBrowser(url: URL(string: "https://example.com"))
+            refreshBrowserTab()
         }
     }
 
     // MARK: - Browser Actions
 
     public func openBrowser(url: URL? = nil) {
-        let targetURL = url ?? URL(string: "https://example.com")!
+        let currentAddress = CarBrowserStream.shared.address
+        let targetURL = url ?? URL(string: currentAddress.isEmpty ? "https://example.com" : currentAddress)!
         NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", CredentialRedactor.safeForLog(targetURL))
+
+        if CarBrowserConfiguration.useLiveRemoteStreamingBrowser {
+            CarBrowserStream.shared.open(address: targetURL.absoluteString)
+            refreshBrowserTab()
+            return
+        }
 
         CarDisplaySession.shared.requestCarScreen()
         CarDisplaySession.shared.open(address: targetURL.absoluteString)
@@ -378,9 +395,97 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
+    public func pushCurrentPageLinks() {
+        guard let controller = interfaceController else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let links = await CarBrowserStream.shared.fetchNavigableLinks()
+            var items: [CPListItem] = []
+
+            if links.isEmpty {
+                let emptyItem = CPListItem(text: "No Links Found", detailText: "No clickable hyperlinks detected on current webpage")
+                items.append(emptyItem)
+            } else {
+                for link in links.prefix(25) {
+                    let title = link.title.isEmpty ? link.href : link.title
+                    let item = CPListItem(text: title, detailText: link.href, image: UIImage(systemName: "link"))
+                    item.handler = { [weak self] _, completion in
+                        CarBrowserStream.shared.execute(command: .selectLink(link.href))
+                        self?.popTopTemplate("links list")
+                        completion()
+                    }
+                    items.append(item)
+                }
+            }
+
+            let host = URL(string: CarBrowserStream.shared.address)?.host ?? "Page"
+            let section = CPListSection(items: items, header: "Links on \(host) (\(links.count))", sectionIndexTitle: nil)
+            let template = CPListTemplate(title: "Links", sections: [section])
+            controller.pushTemplate(template, animated: true) { success, error in
+                if !success {
+                    NSLog("DRIVEPLAY push links template failed: %@", String(describing: error))
+                }
+            }
+        }
+    }
+
+    public func pushCurrentPageInputs() {
+        guard let controller = interfaceController else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let fields = await CarBrowserStream.shared.fetchFormFields()
+            var items: [CPListItem] = []
+
+            if fields.isEmpty {
+                let emptyItem = CPListItem(text: "No Input Fields Found", detailText: "No form or search inputs found on current webpage")
+                items.append(emptyItem)
+            } else {
+                for field in fields.prefix(15) {
+                    let valueText = field.value.isEmpty ? "Tap to enter text on car keyboard" : "Current: \(field.value)"
+                    let item = CPListItem(text: field.label, detailText: valueText, image: UIImage(systemName: "character.cursor.ibeam"))
+                    item.accessoryType = .disclosureIndicator
+                    item.handler = { [weak self] _, completion in
+                        self?.presentFieldInputSearchTemplate(field: field)
+                        completion()
+                    }
+                    items.append(item)
+                }
+            }
+
+            let host = URL(string: CarBrowserStream.shared.address)?.host ?? "Page"
+            let section = CPListSection(items: items, header: "Form Inputs on \(host) (\(fields.count))", sectionIndexTitle: nil)
+            let template = CPListTemplate(title: "Inputs", sections: [section])
+            controller.pushTemplate(template, animated: true) { success, error in
+                if !success {
+                    NSLog("DRIVEPLAY push inputs template failed: %@", String(describing: error))
+                }
+            }
+        }
+    }
+
+    private var fieldInputDelegate: CarPlayFieldInputSearchDelegate?
+
+    private func presentFieldInputSearchTemplate(field: PageInputField) {
+        guard let controller = interfaceController else { return }
+        let delegate = CarPlayFieldInputSearchDelegate(owner: self, field: field)
+        self.fieldInputDelegate = delegate
+        delegate.dismissKeyboard = { [weak self] in
+            self?.popTopTemplate("field input keyboard")
+        }
+        let template = CPSearchTemplate()
+        template.delegate = delegate
+        controller.pushTemplate(template, animated: true) { success, error in
+            if !success {
+                NSLog("DRIVEPLAY push field input template failed: %@", String(describing: error))
+            }
+        }
+    }
+
     public func closeBrowser() {
         NSLog("DRIVEPLAY CarPlay closeBrowser requested: returning to Home")
+        CarBrowserStream.shared.stop()
         interfaceController?.popToRootTemplate(animated: true) { _, _ in }
+        refreshBrowserTab()
     }
 
     // MARK: - What a row asks for
@@ -713,13 +818,71 @@ final class CarPlayBrowserSearchDelegate: NSObject, CPSearchTemplateDelegate {
         }
         if let targetURL = resultURLs[ObjectIdentifier(item)] {
             owner?.openBrowser(url: targetURL)
+            dismissAddressBar()
         }
         completionHandler()
     }
 
-    func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+    @objc func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
         if let firstURL = resultURLs.values.first {
             owner?.openBrowser(url: firstURL)
+            dismissAddressBar()
         }
+    }
+}
+
+final class CarPlayFieldInputSearchDelegate: NSObject, CPSearchTemplateDelegate {
+    weak var owner: CarPlaySceneDelegate?
+    let field: PageInputField
+    var dismissKeyboard: () -> Void = {}
+    private var backRow: CPListItem?
+    private var submitRow: CPListItem?
+    private var currentText: String = ""
+
+    init(owner: CarPlaySceneDelegate?, field: PageInputField) {
+        self.owner = owner
+        self.field = field
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        updatedSearchText searchText: String,
+                        completionHandler: @escaping ([CPListItem]) -> Void) {
+        self.currentText = searchText
+        var items: [CPListItem] = []
+
+        let back = backRow ?? CPListItem(text: "Cancel", detailText: nil, image: UIImage(systemName: "chevron.backward"))
+        backRow = back
+        items.append(back)
+
+        if !searchText.isEmpty {
+            let submit = CPListItem(text: "Set: \"\(searchText)\"", detailText: "Apply text to \(field.label)", image: UIImage(systemName: "checkmark.circle.fill"))
+            submitRow = submit
+            items.append(submit)
+        }
+
+        completionHandler(items)
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        selectedResult item: CPListItem,
+                        completionHandler: @escaping () -> Void) {
+        if let back = backRow, item === back {
+            dismissKeyboard()
+            completionHandler()
+            return
+        }
+        if let submit = submitRow, item === submit {
+            submitTextAndFinish(currentText)
+        }
+        completionHandler()
+    }
+
+    @objc func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+        submitTextAndFinish(currentText)
+    }
+
+    private func submitTextAndFinish(_ text: String) {
+        CarBrowserStream.shared.setFieldValue(id: field.id, text: text)
+        dismissKeyboard()
     }
 }

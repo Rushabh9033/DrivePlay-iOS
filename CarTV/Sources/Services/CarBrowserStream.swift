@@ -13,6 +13,50 @@ import WebKit
 /// about the picture. An `os_log` line is in the device log like any other.
 let carBrowserLog = Logger(subsystem: "com.rushabh.cartvv", category: "CarBrowser")
 
+/// A discrete automotive browser command dispatched from CarPlay.
+public enum CarBrowserCommand: Sendable {
+    case navigate(String)
+    case back
+    case forward
+    case reload
+    case home
+    case scrollUp
+    case scrollDown
+    case selectLink(String)
+    case selectField(String)
+    case enterText(String)
+    case submit
+    case newTab
+    case switchTab(Int)
+    case close
+}
+
+/// A navigable hyperlink on the active webpage.
+public struct PageLink: Identifiable, Sendable {
+    public let id: String
+    public let title: String
+    public let href: String
+
+    public init(id: String, title: String, href: String) {
+        self.id = id
+        self.title = title
+        self.href = href
+    }
+}
+
+/// An interactive form input field on the active webpage.
+public struct PageInputField: Identifiable, Sendable {
+    public let id: String
+    public let label: String
+    public let value: String
+
+    public init(id: String, label: String, value: String) {
+        self.id = id
+        self.label = label
+        self.value = value
+    }
+}
+
 /// The browser that runs **on the car's display**.
 ///
 /// CarPlay cannot draw a web page: there is no web template in
@@ -65,6 +109,8 @@ public final class CarBrowserStream: ObservableObject {
     private var server: ScreenStreamServer?
     private var port: UInt16?
     private var captureTask: Task<Void, Never>?
+    private var sessionStartTime: CFAbsoluteTime = 0
+    private var highActivityUntil: CFAbsoluteTime = 0
     /// The number of pictures that went to the encoder — the stream's clock.
     private(set) var framesSent: Int64 = 0
     /// The last picture that went to the encoder.
@@ -218,6 +264,8 @@ public final class CarBrowserStream: ObservableObject {
         let server = ScreenStreamServer(writer: writer)
         self.writer = writer
         self.server = server
+        self.sessionStartTime = CFAbsoluteTimeGetCurrent()
+        self.highActivityUntil = CFAbsoluteTimeGetCurrent() + 2.0
 
         writer.onReady = { [weak self] in
             Task { @MainActor in self?.publish() }
@@ -274,7 +322,9 @@ public final class CarBrowserStream: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.capturePicture()
-                try? await Task.sleep(nanoseconds: Self.frameInterval)
+                let isHigh = CFAbsoluteTimeGetCurrent() < self.highActivityUntil
+                let sleepNanos: UInt64 = isHigh ? 66_000_000 : 500_000_000
+                try? await Task.sleep(nanoseconds: sleepNanos)
             }
         }
     }
@@ -302,8 +352,221 @@ public final class CarBrowserStream: ObservableObject {
             // them apart from inside the app.
             carBrowserLog.info("frame \(self.framesSent) of \(CredentialRedactor.safeForLog(self.address)) — brightness \(Self.brightness(of: buffer))")
         }
-        writer?.append(pixelBuffer: buffer,
-                       presentationTime: CMTime(value: framesSent, timescale: 30))
+        let elapsed = max(0, CFAbsoluteTimeGetCurrent() - sessionStartTime)
+        let presentationTime = CMTime(seconds: elapsed, preferredTimescale: 600)
+        writer?.append(pixelBuffer: buffer, presentationTime: presentationTime)
+    }
+
+    // MARK: - CarPlay Remote Control Command Engine
+
+    /// Executes a discrete automotive browser command on the live WebKit instance.
+    public func execute(command: CarBrowserCommand) {
+        highActivityUntil = CFAbsoluteTimeGetCurrent() + 2.0
+        switch command {
+        case .navigate(let destination):
+            open(address: destination)
+        case .back:
+            goBack()
+            triggerImmediateCapture(delays: [0.1, 0.3])
+        case .forward:
+            goForward()
+            triggerImmediateCapture(delays: [0.1, 0.3])
+        case .reload:
+            reload()
+            triggerImmediateCapture(delays: [0.1, 0.3])
+        case .home:
+            open(address: "https://example.com")
+        case .scrollUp:
+            scrollUp()
+            triggerImmediateCapture(delays: [0.08, 0.2, 0.35])
+        case .scrollDown:
+            scrollDown()
+            triggerImmediateCapture(delays: [0.08, 0.2, 0.35])
+        case .selectLink(let href):
+            let escapedHref = href.replacingOccurrences(of: "'", with: "\\'")
+            let js = """
+            (function() {
+                var links = document.querySelectorAll('a[href]');
+                for (var i = 0; i < links.length; i++) {
+                    if (links[i].href === '\(escapedHref)') {
+                        links[i].click();
+                        return true;
+                    }
+                }
+                window.location.href = '\(escapedHref)';
+                return true;
+            })()
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+            triggerImmediateCapture(delays: [0.1, 0.3, 0.6])
+        case .selectField(let fieldId):
+            let escaped = fieldId.replacingOccurrences(of: "'", with: "\\'")
+            let js = """
+            (function() {
+                var el = document.getElementById('\(escaped)') || document.querySelector('[name=\"\(escaped)\"]');
+                if (el) { el.focus(); return true; }
+                return false;
+            })()
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        case .enterText(let text):
+            let escaped = text.replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: "\\n")
+            let js = """
+            (function() {
+                var el = document.activeElement;
+                if (el && ('value' in el || el.isContentEditable)) {
+                    if (el.isContentEditable) {
+                        el.innerText = '\(escaped)';
+                    } else {
+                        el.value = '\(escaped)';
+                    }
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+                return false;
+            })()
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+            triggerImmediateCapture(delays: [0.1, 0.25])
+        case .submit:
+            let js = """
+            (function() {
+                var el = document.activeElement;
+                if (el && el.form) { el.form.submit(); return true; }
+                var form = document.querySelector('form');
+                if (form) { form.submit(); return true; }
+                return false;
+            })()
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+            triggerImmediateCapture(delays: [0.2, 0.5])
+        case .newTab:
+            openNewTab(url: URL(string: "https://example.com"))
+        case .switchTab(let index):
+            switchToTab(index: index)
+        case .close:
+            stop()
+        }
+    }
+
+    /// Triggers immediate snapshots for rapid visual feedback during interaction.
+    public func triggerImmediateCapture(delays: [TimeInterval] = [0.05]) {
+        for delay in delays {
+            Task { @MainActor [weak self] in
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+                guard let self, self.isRunning else { return }
+                await self.capturePicture()
+            }
+        }
+    }
+
+    /// Fetches all navigable links present in the current DOM.
+    public func fetchNavigableLinks() async -> [PageLink] {
+        let script = """
+        (function() {
+            var links = [];
+            var seen = {};
+            var elements = document.querySelectorAll('a[href]');
+            for (var i = 0; i < elements.length && links.length < 30; i++) {
+                var el = elements[i];
+                var href = el.href;
+                if (!href || href.startsWith('javascript:') || href.startsWith('#') || seen[href]) continue;
+                var text = (el.innerText || el.textContent || el.getAttribute('aria-label') || '').trim();
+                if (text.length === 0) continue;
+                seen[href] = true;
+                links.push({ id: href, title: text.substring(0, 45), href: href });
+            }
+            return links;
+        })()
+        """
+        guard let result = try? await webView.evaluateJavaScript(script) as? [[String: Any]] else {
+            return []
+        }
+        return result.compactMap { dict in
+            guard let title = dict["title"] as? String,
+                  let href = dict["href"] as? String else { return nil }
+            return PageLink(id: href, title: title, href: href)
+        }
+    }
+
+    /// Fetches interactive form inputs present in the current DOM.
+    public func fetchFormFields() async -> [PageInputField] {
+        let script = """
+        (function() {
+            var fields = [];
+            var elements = document.querySelectorAll('input:not([type="hidden"]), textarea');
+            for (var i = 0; i < elements.length && fields.length < 15; i++) {
+                var el = elements[i];
+                var id = el.id || el.name || ('field_' + i);
+                var label = el.placeholder || el.getAttribute('aria-label') || el.name || el.type || 'Input Field';
+                var val = el.value || '';
+                fields.push({ id: id, label: label.substring(0, 40), value: val });
+            }
+            return fields;
+        })()
+        """
+        guard let result = try? await webView.evaluateJavaScript(script) as? [[String: Any]] else {
+            return []
+        }
+        return result.compactMap { dict in
+            guard let id = dict["id"] as? String,
+                  let label = dict["label"] as? String else { return nil }
+            let value = dict["value"] as? String ?? ""
+            return PageInputField(id: id, label: label, value: value)
+        }
+    }
+
+    // MARK: - Multi-tab Support
+
+    private var tabs: [WKWebView] = []
+    public private(set) var activeTabIndex: Int = 0
+
+    public func openNewTab(url: URL? = nil) {
+        let targetURL = url ?? URL(string: "https://example.com")!
+        let config = WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
+        AdBlockerEngine.shared.apply(to: config)
+        let tabWebView = WKWebView(frame: CGRect(origin: .zero, size: Self.viewport), configuration: config)
+        tabWebView.navigationDelegate = delegate
+        tabs.append(tabWebView)
+        switchToTab(index: tabs.count - 1)
+        tabWebView.load(URLRequest(url: targetURL))
+    }
+
+    public func switchToTab(index: Int) {
+        guard index >= 0 && index < tabs.count else { return }
+        activeTabIndex = index
+        let activeTab = tabs[index]
+        self.address = activeTab.url?.absoluteString ?? ""
+        self.canGoBack = activeTab.canGoBack
+        self.canGoForward = activeTab.canGoForward
+        triggerImmediateCapture()
+    }
+
+    /// Sets the value of a specific input field in the live DOM.
+    public func setFieldValue(id: String, text: String) {
+        highActivityUntil = CFAbsoluteTimeGetCurrent() + 2.0
+        let escapedId = id.replacingOccurrences(of: "'", with: "\\'")
+        let escapedText = text.replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: "\\n")
+        let js = """
+        (function() {
+            var el = document.getElementById('\(escapedId)') || document.querySelector('[name=\"\(escapedId)\"]');
+            if (el) {
+                el.focus();
+                el.value = '\(escapedText)';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+            return false;
+        })()
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+        triggerImmediateCapture(delays: [0.1, 0.25])
     }
 
     /// The mean brightness of a picture, 0…1.

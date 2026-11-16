@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00D1CB407090C593970FE2AE /* CarBrowserConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E6382745054383558A4E4DE /* CarBrowserConfiguration.swift */; };
 		01CFFDBF9930E8DF44299467 /* MiniPlayerBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC2B85858863BD299A7610C /* MiniPlayerBar.swift */; };
 		01E7E140795A2E726D1E7553 /* WatchHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8902B28CD6909A5A5AA004ED /* WatchHistoryStore.swift */; };
 		033994F367F94A4D2CAA11EA /* BrowserOwnershipAndRoleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECE1D8F3D12099822A65FD90 /* BrowserOwnershipAndRoleTests.swift */; };
@@ -160,6 +161,7 @@
 		0908E76E53EA18FCCC3B1A55 /* CredentialStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialStore.swift; sourceTree = "<group>"; };
 		0A9ED5AB8AA297D1B6D2A0C4 /* DLNADIDLParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DLNADIDLParser.swift; sourceTree = "<group>"; };
 		0D17DA4A4701E1687D3FE8B3 /* PlexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexTests.swift; sourceTree = "<group>"; };
+		0E6382745054383558A4E4DE /* CarBrowserConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarBrowserConfiguration.swift; sourceTree = "<group>"; };
 		0FB2689922916EB9CDEF578D /* URLPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLPolicyTests.swift; sourceTree = "<group>"; };
 		0FECE7B82B887BDA6CE9F5B5 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		0FFC623BC9071E7CCC11EB1C /* ChannelListViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelListViewController.swift; sourceTree = "<group>"; };
@@ -385,6 +387,7 @@
 				231DC0DC66994EE2D1046B8E /* AudioExtractorService.swift */,
 				3CFAE559DEF637178EC331DC /* BrowserCatalog.swift */,
 				1602BAD18677EEBC21E61455 /* BrowserTabManager.swift */,
+				0E6382745054383558A4E4DE /* CarBrowserConfiguration.swift */,
 				8A67435E6ACF4626B8E61C10 /* CarBrowserStream.swift */,
 				0908E76E53EA18FCCC3B1A55 /* CredentialStore.swift */,
 				8A72C785D004AEDF090CDC89 /* DeviceOrientationMonitor.swift */,
@@ -683,6 +686,7 @@
 				3EC1AF56E0BFF30639D8FE6C /* AudioSubtitlePickerSheet.swift in Sources */,
 				2194A6B002666253EAE7442A /* BrowserCatalog.swift in Sources */,
 				271AA937CECE881A38249179 /* BrowserTabManager.swift in Sources */,
+				00D1CB407090C593970FE2AE /* CarBrowserConfiguration.swift in Sources */,
 				AE44785953F14D21E12C013C /* CarBrowserStream.swift in Sources */,
 				2ECDBF1FE82139FEF7D197B2 /* CarDisplaySession.swift in Sources */,
 				4700F1CF03724B4C0023C46A /* CarModeDashboardView.swift in Sources */,

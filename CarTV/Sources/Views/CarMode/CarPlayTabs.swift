@@ -18,6 +18,8 @@ protocol CarPlayTabActions: AnyObject {
     func openBrowser(url: URL?)
     func closeBrowser()
     func pushBrowserAddressBar()
+    func pushCurrentPageLinks()
+    func pushCurrentPageInputs()
 }
 
 /// The four tabs the car's screen is built from: Home, Favorites, Cast, and Browser.
@@ -519,24 +521,35 @@ enum CarPlayTemplates {
     // MARK: - Browser
 
     /// The dedicated browser section on CarPlay.
+    @MainActor
     static func browserSections(owner: CarPlayTabActions?) -> [CPListSection] {
         var items: [CPListTemplateItem] = []
 
+        let stream = CarBrowserStream.shared
+        let currentHost = URL(string: stream.address)?.host ?? (stream.address.isEmpty ? "example.com" : stream.address)
+
         let openBrowserItem = CPListItem(
-            text: "Launch Web Browser",
-            detailText: "https://example.com — Full car-screen web experience",
+            text: "▶ Watch & Browse Live Webpage",
+            detailText: stream.isRunning ? "Live Stream: \(currentHost)" : "Tap to launch live WebKit video stream",
             image: UIImage(systemName: "safari")
         )
-        openBrowserItem.accessoryType = .disclosureIndicator
+        if #available(iOS 26.4, *) {
+            openBrowserItem.playbackConfiguration = CPPlaybackConfiguration(
+                preferredPresentation: .video,
+                playbackAction: .play,
+                elapsedTime: .zero,
+                duration: .zero
+            )
+        }
         openBrowserItem.handler = { _, completion in
-            owner?.openBrowser(url: URL(string: "https://example.com"))
+            owner?.openBrowser(url: URL(string: stream.address.isEmpty ? "https://example.com" : stream.address))
             completion()
         }
         items.append(openBrowserItem)
 
         let searchItem = CPListItem(
-            text: "Search the Web",
-            detailText: "Search Google directly with car keyboard",
+            text: "⌨️ Type URL or Search...",
+            detailText: "CarPlay on-screen keyboard",
             image: UIImage(systemName: "magnifyingglass")
         )
         searchItem.accessoryType = .disclosureIndicator
@@ -545,6 +558,85 @@ enum CarPlayTemplates {
             completion()
         }
         items.append(searchItem)
+
+        let scrollDownItem = CPListItem(
+            text: "📜 Scroll Down",
+            detailText: "Scroll webpage down",
+            image: UIImage(systemName: "chevron.down")
+        )
+        scrollDownItem.handler = { _, completion in
+            stream.execute(command: .scrollDown)
+            completion()
+        }
+        items.append(scrollDownItem)
+
+        let scrollUpItem = CPListItem(
+            text: "📜 Scroll Up",
+            detailText: "Scroll webpage up",
+            image: UIImage(systemName: "chevron.up")
+        )
+        scrollUpItem.handler = { _, completion in
+            stream.execute(command: .scrollUp)
+            completion()
+        }
+        items.append(scrollUpItem)
+
+        let linksItem = CPListItem(
+            text: "🔗 Links on Current Page",
+            detailText: "Browse and select links on \(currentHost)",
+            image: UIImage(systemName: "list.bullet")
+        )
+        linksItem.accessoryType = .disclosureIndicator
+        linksItem.handler = { _, completion in
+            owner?.pushCurrentPageLinks()
+            completion()
+        }
+        items.append(linksItem)
+
+        let inputsItem = CPListItem(
+            text: "📝 Form Inputs on Current Page",
+            detailText: "Select input fields to type on car screen",
+            image: UIImage(systemName: "character.cursor.ibeam")
+        )
+        inputsItem.accessoryType = .disclosureIndicator
+        inputsItem.handler = { _, completion in
+            owner?.pushCurrentPageInputs()
+            completion()
+        }
+        items.append(inputsItem)
+
+        let reloadItem = CPListItem(
+            text: "🔄 Reload Webpage",
+            detailText: "Refresh live DOM and video stream",
+            image: UIImage(systemName: "arrow.clockwise")
+        )
+        reloadItem.handler = { _, completion in
+            stream.execute(command: .reload)
+            completion()
+        }
+        items.append(reloadItem)
+
+        let backItem = CPListItem(
+            text: "⬅ Back",
+            detailText: "Navigate back in browser history",
+            image: UIImage(systemName: "chevron.backward")
+        )
+        backItem.handler = { _, completion in
+            stream.execute(command: .back)
+            completion()
+        }
+        items.append(backItem)
+
+        let forwardItem = CPListItem(
+            text: "➡ Forward",
+            detailText: "Navigate forward in browser history",
+            image: UIImage(systemName: "chevron.forward")
+        )
+        forwardItem.handler = { _, completion in
+            stream.execute(command: .forward)
+            completion()
+        }
+        items.append(forwardItem)
 
         let closeItem = CPListItem(
             text: "Close Browser",
@@ -557,7 +649,7 @@ enum CarPlayTemplates {
         }
         items.append(closeItem)
 
-        let section = CPListSection(items: items, header: "CarPlay Web Browser", sectionIndexTitle: nil)
+        let section = CPListSection(items: items, header: "CarPlay Web Browser (\(currentHost))", sectionIndexTitle: nil)
         return [section]
     }
 }

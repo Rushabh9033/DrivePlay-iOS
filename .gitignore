@@ -18,3 +18,8 @@ scratch/
 cartv-m3u-iptv-player-cast/
 REA_workflow_Rushabh.zip
 build_device/
+backup_user_docs/
+backup_*/
+*_backup/
+*.backup
+*.bak
