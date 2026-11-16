@@ -292,18 +292,12 @@ public final class ScreenShareService: ObservableObject {
         if Self.startsDemoInsteadOfBroadcast { startDemo() }
     }
 
-    /// The car asked for a page — the phone runs it and the share carries it.
+    /// The car asked for a page address.
     ///
-    /// The relay is started here (it has to be listening **before** the user
-    /// picks the broadcast in the system list) and the phone is told that the
-    /// car is waiting, so the user knows the share has to be started.
+    /// Browser navigation is independent from screen sharing: car requests do
+    /// not secretly trigger screen recording or broadcast relays.
     public func carRequestedPage(_ address: String) {
         pendingCarPage = address
-        // The share captures **the phone's screen**, so the page the car asked
-        // for has to be *on* the screen: the phone comes to its browser tab.
-        // Without this the car asks and nothing happens on either screen.
-        AppTabSelection.shared.tab = .browser
-        startRelay()
     }
 
     /// True on the Simulator, where the demo picture stands in for the screen.

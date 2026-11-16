@@ -29,4 +29,16 @@ final class InCarShelfTests: XCTestCase {
         XCTAssertNotEqual(InCarAutomotiveController.ShelfSignature(channels: [plain], favorites: []),
                           InCarAutomotiveController.ShelfSignature(channels: [favourite], favorites: [favourite]))
     }
+
+    func test_browserTabSwitchesAndLoadsURLWithoutCrash() {
+        let vc = InCarAutomotiveController()
+        vc.view.frame = CGRect(x: 0, y: 0, width: 800, height: 480)
+        vc.viewDidLoad()
+        vc.viewDidLayoutSubviews()
+        vc.switchTab(.browser)
+        XCTAssertFalse(vc.browserContainer.isHidden)
+        vc.openBrowser(url: URL(string: "https://m.youtube.com")!)
+        XCTAssertNotNil(vc.webView)
+        XCTAssertFalse(vc.webView!.isHidden)
+    }
 }

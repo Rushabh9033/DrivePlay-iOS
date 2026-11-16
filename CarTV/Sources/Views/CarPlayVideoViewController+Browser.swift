@@ -57,10 +57,23 @@ extension InCarAutomotiveController {
         browserUrlContainer.layer.masksToBounds = true
         browserToolbar.addSubview(browserUrlContainer)
         
+        browserUrlTextField.placeholder = "Enter a URL or search"
+        browserUrlTextField.font = .systemFont(ofSize: 13, weight: .regular)
+        browserUrlTextField.textColor = UIColor(white: 0.15, alpha: 1.0)
+        browserUrlTextField.textAlignment = .center
+        browserUrlTextField.returnKeyType = .go
+        browserUrlTextField.keyboardType = .URL
+        browserUrlTextField.autocapitalizationType = .none
+        browserUrlTextField.autocorrectionType = .no
+        browserUrlTextField.clearButtonMode = .whileEditing
+        browserUrlTextField.delegate = self
+        browserUrlContainer.addSubview(browserUrlTextField)
+        
         browserUrlLabel.text = "Enter a URL or search"
         browserUrlLabel.font = .systemFont(ofSize: 13, weight: .regular)
         browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
         browserUrlLabel.textAlignment = .center
+        browserUrlLabel.isHidden = true
         browserUrlContainer.addSubview(browserUrlLabel)
         
         browserReloadBtn.setImage(UIImage(systemName: "arrow.clockwise", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12.5, weight: .bold)), for: .normal)
@@ -72,26 +85,41 @@ extension InCarAutomotiveController {
         browserUrlContainer.addGestureRecognizer(urlTap)
         browserUrlContainer.isUserInteractionEnabled = true
         
-        // Right Controls: [ 1 ]  ☆  ⧉  ⤢  AA
+        // Keyboard toggle button [ ⌨ ]
+        let kbCfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        browserKeyboardToggleBtn.setImage(UIImage(systemName: "keyboard", withConfiguration: kbCfg), for: .normal)
+        browserKeyboardToggleBtn.tintColor = UIColor(white: 0.25, alpha: 1.0)
+        browserKeyboardToggleBtn.addTarget(self, action: #selector(handleKeyboardToggle), for: .touchUpInside)
+        browserToolbar.addSubview(browserKeyboardToggleBtn)
+        
+        // Right Controls: [ 1 ]  [ ... ]
         let tabImg = makeTabBadgeImage()
         browserTabsBtn.setImage(tabImg, for: .normal)
         browserTabsBtn.addTarget(self, action: #selector(handleBrowserHome), for: .touchUpInside)
         browserToolbar.addSubview(browserTabsBtn)
         
+        browserMoreBtn.setImage(UIImage(systemName: "ellipsis", withConfiguration: medCfg), for: .normal)
+        browserMoreBtn.tintColor = UIColor(white: 0.20, alpha: 1.0)
+        browserMoreBtn.addTarget(self, action: #selector(handleBrowserMore), for: .touchUpInside)
+        browserToolbar.addSubview(browserMoreBtn)
+        
         browserCastBtn.setImage(UIImage(systemName: "airplayvideo", withConfiguration: regCfg), for: .normal)
         browserCastBtn.tintColor = UIColor(white: 0.55, alpha: 1.0)
         browserCastBtn.addTarget(self, action: #selector(handleBrowserCast), for: .touchUpInside)
+        browserCastBtn.isHidden = true
         browserToolbar.addSubview(browserCastBtn)
 
         browserFullscreenBtn.setImage(UIImage(systemName: "arrow.up.left.and.arrow.down.right", withConfiguration: medCfg), for: .normal)
         browserFullscreenBtn.tintColor = UIColor(white: 0.55, alpha: 1.0)
         browserFullscreenBtn.addTarget(self, action: #selector(handleToggleFullscreen), for: .touchUpInside)
+        browserFullscreenBtn.isHidden = true
         browserToolbar.addSubview(browserFullscreenBtn)
 
         browserAABtn.setTitle("AA", for: .normal)
         browserAABtn.setTitleColor(UIColor(white: 0.55, alpha: 1.0), for: .normal)
         browserAABtn.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
         browserAABtn.addTarget(self, action: #selector(handleBrowserTextSize), for: .touchUpInside)
+        browserAABtn.isHidden = true
         browserToolbar.addSubview(browserAABtn)
         
         // Layout Toolbar using AutoLayout
@@ -100,12 +128,12 @@ extension InCarAutomotiveController {
         browserSidebarBtn.translatesAutoresizingMaskIntoConstraints = false
         browserHomeBtn.translatesAutoresizingMaskIntoConstraints = false
         browserUrlContainer.translatesAutoresizingMaskIntoConstraints = false
+        browserUrlTextField.translatesAutoresizingMaskIntoConstraints = false
         browserUrlLabel.translatesAutoresizingMaskIntoConstraints = false
         browserReloadBtn.translatesAutoresizingMaskIntoConstraints = false
+        browserKeyboardToggleBtn.translatesAutoresizingMaskIntoConstraints = false
         browserTabsBtn.translatesAutoresizingMaskIntoConstraints = false
-        browserCastBtn.translatesAutoresizingMaskIntoConstraints = false
-        browserFullscreenBtn.translatesAutoresizingMaskIntoConstraints = false
-        browserAABtn.translatesAutoresizingMaskIntoConstraints = false
+        browserMoreBtn.translatesAutoresizingMaskIntoConstraints = false
         
         NSLayoutConstraint.activate([
             browserCloseBtn.leadingAnchor.constraint(equalTo: browserToolbar.safeAreaLayoutGuide.leadingAnchor, constant: 8),
@@ -129,9 +157,14 @@ extension InCarAutomotiveController {
             browserHomeBtn.heightAnchor.constraint(equalToConstant: 28),
             
             browserUrlContainer.leadingAnchor.constraint(equalTo: browserHomeBtn.trailingAnchor, constant: 10),
-            browserUrlContainer.trailingAnchor.constraint(equalTo: browserTabsBtn.leadingAnchor, constant: -10),
+            browserUrlContainer.trailingAnchor.constraint(equalTo: browserKeyboardToggleBtn.leadingAnchor, constant: -8),
             browserUrlContainer.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
             browserUrlContainer.heightAnchor.constraint(equalToConstant: 32),
+            
+            browserUrlTextField.leadingAnchor.constraint(equalTo: browserUrlContainer.leadingAnchor, constant: 12),
+            browserUrlTextField.trailingAnchor.constraint(equalTo: browserReloadBtn.leadingAnchor, constant: -6),
+            browserUrlTextField.centerYAnchor.constraint(equalTo: browserUrlContainer.centerYAnchor),
+            browserUrlTextField.heightAnchor.constraint(equalToConstant: 28),
             
             browserUrlLabel.leadingAnchor.constraint(equalTo: browserUrlContainer.leadingAnchor, constant: 14),
             browserUrlLabel.trailingAnchor.constraint(equalTo: browserReloadBtn.leadingAnchor, constant: -6),
@@ -142,25 +175,20 @@ extension InCarAutomotiveController {
             browserReloadBtn.widthAnchor.constraint(equalToConstant: 20),
             browserReloadBtn.heightAnchor.constraint(equalToConstant: 20),
             
-            browserTabsBtn.trailingAnchor.constraint(equalTo: browserCastBtn.leadingAnchor, constant: -8),
+            browserKeyboardToggleBtn.trailingAnchor.constraint(equalTo: browserTabsBtn.leadingAnchor, constant: -8),
+            browserKeyboardToggleBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
+            browserKeyboardToggleBtn.widthAnchor.constraint(equalToConstant: 26),
+            browserKeyboardToggleBtn.heightAnchor.constraint(equalToConstant: 26),
+            
+            browserTabsBtn.trailingAnchor.constraint(equalTo: browserMoreBtn.leadingAnchor, constant: -8),
             browserTabsBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
             browserTabsBtn.widthAnchor.constraint(equalToConstant: 24),
             browserTabsBtn.heightAnchor.constraint(equalToConstant: 24),
 
-            browserCastBtn.trailingAnchor.constraint(equalTo: browserFullscreenBtn.leadingAnchor, constant: -6),
-            browserCastBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
-            browserCastBtn.widthAnchor.constraint(equalToConstant: 28),
-            browserCastBtn.heightAnchor.constraint(equalToConstant: 28),
-            
-            browserFullscreenBtn.trailingAnchor.constraint(equalTo: browserAABtn.leadingAnchor, constant: -6),
-            browserFullscreenBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
-            browserFullscreenBtn.widthAnchor.constraint(equalToConstant: 28),
-            browserFullscreenBtn.heightAnchor.constraint(equalToConstant: 28),
-            
-            browserAABtn.trailingAnchor.constraint(equalTo: browserToolbar.safeAreaLayoutGuide.trailingAnchor, constant: -10),
-            browserAABtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
-            browserAABtn.widthAnchor.constraint(equalToConstant: 28),
-            browserAABtn.heightAnchor.constraint(equalToConstant: 28)
+            browserMoreBtn.trailingAnchor.constraint(equalTo: browserToolbar.safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            browserMoreBtn.centerYAnchor.constraint(equalTo: browserToolbar.centerYAnchor),
+            browserMoreBtn.widthAnchor.constraint(equalToConstant: 28),
+            browserMoreBtn.heightAnchor.constraint(equalToConstant: 28)
         ])
         
         // Progress view
@@ -169,10 +197,11 @@ extension InCarAutomotiveController {
         browserProgressView.isHidden = true
         browserToolbar.addSubview(browserProgressView)
         
-        // 2. Browser Catalog Home View
+        // 2. Browser Catalog Home View (hidden in favor of direct live WebKit)
         browserHomeScrollView.backgroundColor = .white
         browserHomeScrollView.alwaysBounceVertical = true
         browserHomeScrollView.showsVerticalScrollIndicator = false
+        browserHomeScrollView.isHidden = true
         browserContainer.addSubview(browserHomeScrollView)
         
         browserAppsStack.axis = .vertical
@@ -207,6 +236,18 @@ extension InCarAutomotiveController {
         browserScrollDownBtn.layer.masksToBounds = true
         browserScrollDownBtn.addTarget(self, action: #selector(handleBrowserScrollDown), for: .touchUpInside)
         browserContainer.addSubview(browserScrollDownBtn)
+        
+        // 4. In-App Floating Keyboard
+        floatingKeyboard.delegate = self
+        floatingKeyboard.isHidden = true
+        floatingKeyboard.alpha = 0.0
+        browserContainer.addSubview(floatingKeyboard)
+
+        if !isInteractive {
+            browserKeyboardToggleBtn.isHidden = true
+            browserUrlTextField.isUserInteractionEnabled = false
+            floatingKeyboard.isHidden = true
+        }
     }
     
     private struct BrowserAppDef {

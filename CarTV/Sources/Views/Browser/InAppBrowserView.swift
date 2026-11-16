@@ -4,6 +4,7 @@ import WebKit
 public struct BookmarkItem: Identifiable {
     public let id = UUID()
     public let name: String
+    public let subtitle: String?
     public let urlString: String
     public let iconBgColor: Color
     public let systemImage: String?
@@ -12,6 +13,7 @@ public struct BookmarkItem: Identifiable {
     
     public init(
         name: String,
+        subtitle: String? = nil,
         urlString: String,
         iconBgColor: Color = .clear,
         systemImage: String? = nil,
@@ -19,6 +21,7 @@ public struct BookmarkItem: Identifiable {
         labelColor: Color = .white
     ) {
         self.name = name
+        self.subtitle = subtitle
         self.urlString = urlString
         self.iconBgColor = iconBgColor
         self.systemImage = systemImage
@@ -62,7 +65,6 @@ public struct BrowserAddressBoxes: Equatable {
 public struct InAppBrowserView: View {
     @ObservedObject var tabManager = BrowserTabManager.shared
     @ObservedObject var adBlocker = AdBlockerEngine.shared
-    @ObservedObject private var share = ScreenShareService.shared
 
     @State private var boxes = BrowserAddressBoxes()
     @State private var showAdBlockInfo: Bool = false
@@ -90,14 +92,6 @@ public struct InAppBrowserView: View {
             safariBottomBar
                 .padding(.horizontal, 10)
                 .padding(.bottom, 6)
-
-            // The car is waiting for this page — the car has no web view of
-            // its own, so the page reaches it through the phone's screen
-            // share, and iOS always asks the user to start one.
-            carWaitingBanner
-                .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
         }
         .navigationTitle(currentNavTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -155,43 +149,6 @@ public struct InAppBrowserView: View {
         }
     }
     
-    /// The car is waiting for the page the user opened on it.
-    ///
-    /// The picker is the only way to start a share: iOS always asks the
-    /// **user**, and the car's screen is not a touch screen — so the button
-    /// has to be on the phone.
-    @ViewBuilder
-    private var carWaitingBanner: some View {
-        if let page = share.pendingCarPage {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: "car.fill")
-                        .foregroundColor(CarTVTheme.accent)
-                    Text("The car is waiting for this page")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(CarTVTheme.textPrimary)
-                    Spacer()
-                }
-                Text(page)
-                    .font(.system(size: 12))
-                    .foregroundColor(CarTVTheme.textSecondary)
-                    .lineLimit(1)
-                BroadcastPickerView()
-                    .frame(height: 44)
-                    .background(Color(UIColor.tertiarySystemGroupedBackground))
-                    .cornerRadius(10)
-                Text("Tap the button above and choose the DrivePlay screen relay — the page then appears on the car's display.")
-                    .font(.system(size: 11))
-                    .foregroundColor(CarTVTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .background(Color(UIColor.secondarySystemGroupedBackground))
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
-        }
-    }
-
     private func syncAddressFieldWithActiveTab() {
         boxes.address = ""
     }

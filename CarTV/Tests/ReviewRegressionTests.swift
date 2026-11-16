@@ -535,9 +535,10 @@ final class ReviewRegressionTests: XCTestCase {
         func togglePlayback() {}
         func startScreenShare() {}
         func stopScreenShare() {}
+        func openBrowser(url: URL?) {}
+        func closeBrowser() {}
         func pushBrowserAddressBar() {}
-        func openOnCar(address: String) {}
-        func driveCarBrowser(_ command: CarBrowserCommand) {}
+        func openOnPhone(address: String) {}
     }
 }
 

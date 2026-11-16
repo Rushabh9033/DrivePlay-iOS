@@ -68,9 +68,9 @@
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
 					<key>UISceneConfigurationName</key>
-					<string>CarPlay Vehicle Window</string>
+					<string>CarPlay Window Configuration</string>
 					<key>UISceneDelegateClassName</key>
-					<string>CarTV.CarPlayWindowProbe</string>
+					<string>CarTV.CarPlayWindowSceneDelegate</string>
 				</dict>
 			</array>
 			<key>UIWindowSceneSessionRoleExternalDisplay</key>
