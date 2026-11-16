@@ -371,6 +371,9 @@ enum CarPlayTemplates {
 
     // MARK: - Browser
 
+    // NOTE: Native CarPlay (CPTemplateApplicationScene) cannot host WKWebView.
+    // Real web rendering is on UIWindowSceneSessionRoleCarPlay (CarPlayWindowSceneDelegate).
+    // This tab provides media discovery only.
     /// The Browser tab: rich, native content discovery, web search, and video platforms.
     static func browserSections(currentURL: String,
                                 owner: CarPlayTabActions?) -> [CPListSection] {

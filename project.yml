@@ -68,6 +68,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
+            UIWindowSceneSessionRoleCarPlay:
+              - UISceneConfigurationName: "CarPlay Window Configuration"
+                UISceneClassName: "UIWindowScene"
+                UISceneDelegateClassName: "CarTV.CarPlayWindowSceneDelegate"
             CPTemplateApplicationSceneSessionRoleApplication:
               - UISceneConfigurationName: "CarPlay Configuration"
                 UISceneDelegateClassName: "CarTV.CarPlaySceneDelegate"

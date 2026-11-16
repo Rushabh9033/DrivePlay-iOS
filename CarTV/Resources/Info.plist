@@ -62,6 +62,17 @@
 					<string>CarTV.CarPlaySceneDelegate</string>
 				</dict>
 			</array>
+			<key>UIWindowSceneSessionRoleCarPlay</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>CarPlay Window Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>CarTV.CarPlayWindowSceneDelegate</string>
+				</dict>
+			</array>
 			<key>UIWindowSceneSessionRoleExternalDisplay</key>
 			<array>
 				<dict>

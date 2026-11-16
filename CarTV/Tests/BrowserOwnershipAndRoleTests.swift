@@ -87,4 +87,61 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
         XCTAssertEqual(CarPlayTab.browser.rawValue, "Web Video")
         XCTAssertEqual(CarPlayTab.browser.symbol, "play.rectangle.on.rectangle.fill")
     }
+
+    // MARK: - Real CarPlay WebKit Browser Tests
+
+    func test_carplay_window_scene_role_registered_in_info_plist() throws {
+        guard let infoPlistPath = Bundle.main.path(forResource: "Info", ofType: "plist") ??
+              Bundle(for: Self.self).path(forResource: "Info", ofType: "plist"),
+              let plistData = FileManager.default.contents(atPath: infoPlistPath),
+              let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
+              let sceneManifest = plist["UIApplicationSceneManifest"] as? [String: Any],
+              let sceneConfigs = sceneManifest["UISceneConfigurations"] as? [String: Any] else {
+            // Alternatively test from Bundle.main.infoDictionary
+            let manifest = Bundle.main.infoDictionary?["UIApplicationSceneManifest"] as? [String: Any]
+            let configs = manifest?["UISceneConfigurations"] as? [String: Any]
+            let carPlayWindowScenes = configs?["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
+            XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
+            let firstConfig = carPlayWindowScenes?.first
+            XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
+            return
+        }
+
+        let carPlayWindowScenes = sceneConfigs["UIWindowSceneSessionRoleCarPlay"] as? [[String: Any]]
+        XCTAssertNotNil(carPlayWindowScenes, "Info.plist must declare UIWindowSceneSessionRoleCarPlay")
+        let firstConfig = carPlayWindowScenes?.first
+        XCTAssertEqual(firstConfig?["UISceneDelegateClassName"] as? String, "CarTV.CarPlayWindowSceneDelegate")
+    }
+
+    @MainActor
+    func test_carplay_web_view_controller_lifecycle_and_components() {
+        let webVC = CarPlayWebViewController()
+        XCTAssertNotNil(webVC.view)
+        webVC.view.layoutIfNeeded()
+
+        // Verify webview and subviews
+        let subviews = webVC.view.subviews
+        let hasWebView = subviews.contains { $0 is WKWebView }
+        XCTAssertTrue(hasWebView, "CarPlayWebViewController must contain a real WKWebView")
+
+        let hasKeyboard = subviews.contains { $0 is CarPlayFloatingKeyboardView }
+        XCTAssertTrue(hasKeyboard, "CarPlayWebViewController must contain an on-screen CarPlayFloatingKeyboardView")
+    }
+
+    @MainActor
+    func test_carplay_floating_keyboard_delegate_interaction() {
+        let webVC = CarPlayWebViewController()
+        _ = webVC.view
+        webVC.view.layoutIfNeeded()
+
+        let keyboard = CarPlayFloatingKeyboardView()
+        keyboard.delegate = webVC
+
+        // Verify entering text, delete, clear, and dismiss do not crash
+        webVC.floatingKeyboard(keyboard, didEnterText: "test")
+        webVC.floatingKeyboardDidTapDelete(keyboard)
+        webVC.floatingKeyboardDidTapClear(keyboard)
+        webVC.floatingKeyboard(keyboard, didSelectQuickItem: "google.com")
+        webVC.floatingKeyboardDidTapDismiss(keyboard)
+    }
 }
