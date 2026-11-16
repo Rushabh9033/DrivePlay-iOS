@@ -104,7 +104,19 @@ public final class CarPlayWebViewController: UIViewController,
         configureSafetyMonitoring()
         setupObservers()
 
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleSendToCarNotification(_:)),
+            name: Notification.Name("DrivePlaySendToCar"),
+            object: nil
+        )
+
         load(url: homeURL)
+    }
+
+    @objc private func handleSendToCarNotification(_ notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL else { return }
+        load(url: url)
     }
 
     public override func viewDidLayoutSubviews() {

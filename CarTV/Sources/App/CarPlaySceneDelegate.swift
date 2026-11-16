@@ -574,6 +574,18 @@ public final class CarPlaySceneDelegate: UIResponder,
     public func handleCarPlayWebSelection(_ address: String) {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
+            if let url = URL(string: trimmed) {
+                let ch = Channel(
+                    name: "Web Stream",
+                    streamURL: url,
+                    groupTitle: "Web Stream"
+                )
+                play(channel: ch)
+                return
+            }
+        }
         
         let lower = trimmed.lowercased()
         if lower.contains("youtube") {
