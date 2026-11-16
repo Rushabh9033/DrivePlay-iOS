@@ -207,21 +207,20 @@ extension InCarAutomotiveController {
             sup.bringSubviewToFront(self.view)
         }
         self.view.bringSubviewToFront(browserContainer)
-        // The page stops with the catalogue — see `handleBrowserHome`.
-        self.webView?.stopLoading()
-        self.browserHomeScrollView.isHidden = false
-        self.webView?.isHidden = true
-        self.browserUrlLabel.text = "Enter a URL or search"
-        self.browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
-        self.browserBackBtn.tintColor = UIColor(white: 0.70, alpha: 1.0)
+        self.browserHomeScrollView.isHidden = true
+        self.webView?.isHidden = false
         
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         self.browserContainer.frame = self.view.bounds
         let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
         self.browserToolbar.frame = CGRect(x: 0, y: 0, width: self.view.bounds.width, height: barH)
-        self.browserHomeScrollView.frame = CGRect(x: 0, y: barH, width: self.view.bounds.width, height: self.view.bounds.height - barH)
+        self.webView?.frame = CGRect(x: 0, y: barH, width: self.view.bounds.width, height: self.view.bounds.height - barH)
         CATransaction.commit()
+        
+        if let url = URL(string: "https://www.google.com") {
+            openBrowser(url: url)
+        }
         
         self.view.setNeedsLayout()
         self.view.layoutIfNeeded()
@@ -304,17 +303,11 @@ extension InCarAutomotiveController {
     }
     
     @objc public func handleBrowserHome() {
-        // The house button means "back to the catalogue" — the page has to
-        // stop, not just be hidden: a page that keeps loading (or playing)
-        // behind the catalogue burns the battery and the mobile data.
-        self.webView?.stopLoading()
-        self.browserHomeScrollView.isHidden = false
-        self.webView?.isHidden = true
-        self.browserUrlLabel.text = "Enter a URL or search"
-        self.browserUrlTextField.text = ""
-        self.browserUrlTextField.resignFirstResponder()
-        self.browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
-        self.browserBackBtn.tintColor = UIColor(white: 0.70, alpha: 1.0)
+        self.browserHomeScrollView.isHidden = true
+        self.webView?.isHidden = false
+        if let url = URL(string: "https://www.google.com") {
+            openBrowser(url: url)
+        }
         hideFloatingKeyboard()
     }
     

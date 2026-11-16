@@ -197,10 +197,11 @@ extension InCarAutomotiveController {
         browserProgressView.isHidden = true
         browserToolbar.addSubview(browserProgressView)
         
-        // 2. Browser Catalog Home View
+        // 2. Browser Catalog Home View (hidden in favor of direct live WebKit)
         browserHomeScrollView.backgroundColor = .white
         browserHomeScrollView.alwaysBounceVertical = true
         browserHomeScrollView.showsVerticalScrollIndicator = false
+        browserHomeScrollView.isHidden = true
         browserContainer.addSubview(browserHomeScrollView)
         
         browserAppsStack.axis = .vertical
