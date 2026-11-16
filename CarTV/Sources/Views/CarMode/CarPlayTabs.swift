@@ -51,7 +51,7 @@ enum CarPlayTab: String, CaseIterable {
     case home = "Home"
     case favorites = "Favorites"
     case cast = "Cast"
-    case browser = "Browser"
+    case browser = "Web Video"
 
     /// The tab's icon — a template image, so the system paints it with its own
     /// colours. A tint of ours paints the whole tab bar green, and the car is
@@ -65,7 +65,7 @@ enum CarPlayTab: String, CaseIterable {
         case .home: return "house.fill"
         case .favorites: return "heart.fill"
         case .cast: return "airplayvideo"
-        case .browser: return "safari.fill"
+        case .browser: return "play.rectangle.on.rectangle.fill"
         }
     }
 }
@@ -378,8 +378,8 @@ enum CarPlayTemplates {
 
         // 1. Search & Web Navigation
         var navItems: [CPListItem] = []
-        let search = CPListItem(text: "Search Web or Enter URL",
-                                detailText: "CarPlay address bar & search engine",
+        let search = CPListItem(text: "Search Web Video or Stream URL",
+                                detailText: "Find video streams, channels or direct links",
                                 image: UIImage(systemName: "magnifyingglass"))
         search.accessoryType = .disclosureIndicator
         search.handler = { _, completion in
@@ -801,7 +801,7 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
                                                  image: UIImage(systemName: "magnifyingglass")),
                                address: query))
         }
-        for row in rows(currentURL: BrowserTabManager.shared.activeTabURL) {
+        for row in rows(currentURL: "") {
             let matches = query.isEmpty ||
                           row.address.localizedCaseInsensitiveContains(query) ||
                           (row.item.text?.localizedCaseInsensitiveContains(query) ?? false) ||

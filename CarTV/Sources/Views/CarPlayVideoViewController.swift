@@ -28,8 +28,19 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     }
     
     // MARK: - Properties
+    public let isInteractive: Bool
     public internal(set) var currentTab: ActiveTab = .home
     var cancellables = Set<AnyCancellable>()
+
+    public init(isInteractive: Bool = true) {
+        self.isInteractive = isInteractive
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    public required init?(coder: NSCoder) {
+        self.isInteractive = true
+        super.init(coder: coder)
+    }
     /// Channel logos are cached by URL. Without a cost limit the cache grows with
     /// every logo ever seen and is never evicted.
     static let imageCache: NSCache<NSString, UIImage> = {

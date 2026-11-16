@@ -241,6 +241,12 @@ extension InCarAutomotiveController {
         floatingKeyboard.isHidden = true
         floatingKeyboard.alpha = 0.0
         browserContainer.addSubview(floatingKeyboard)
+
+        if !isInteractive {
+            browserKeyboardToggleBtn.isHidden = true
+            browserUrlTextField.isUserInteractionEnabled = false
+            floatingKeyboard.isHidden = true
+        }
     }
     
     private struct BrowserAppDef {

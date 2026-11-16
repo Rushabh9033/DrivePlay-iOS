@@ -2,8 +2,7 @@ import SwiftUI
 import UIKit
 
 public struct MainTabView: View {
-    /// The tab the app shows — shared, so the car can bring the browser to
-    /// the front (see `AppTabSelection`).
+    /// The handset's active tab selection, isolated to the iPhone UI.
     @ObservedObject private var tabs = AppTabSelection.shared
     @ObservedObject var playbackManager = PlaybackManager.shared
     @ObservedObject var orientationMonitor = DeviceOrientationMonitor.shared

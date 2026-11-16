@@ -214,9 +214,9 @@ final class CarPlayTabTests: XCTestCase {
     }
 
     /// AC55: the car's screen is a tab bar with the tabs Home, Favorites, Cast
-    /// and Browser — every one of them carries its own title and icon.
+    /// and Web Video — every one of them carries its own title and icon.
     func test_AC55_the_car_screen_is_a_tab_bar_with_four_tabs() {
-        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast", "Browser"])
+        XCTAssertEqual(CarPlayTab.allCases.map(\.rawValue), ["Home", "Favorites", "Cast", "Web Video"])
 
         for tab in CarPlayTab.allCases {
             let template = CarPlaySceneDelegate.makeTemplate(tab: tab, sections: [])
@@ -950,12 +950,7 @@ final class CarPlaySearchTests: XCTestCase {
         XCTAssertTrue(opened.isEmpty, "the way back opened a page")
     }
 
-    /// AC142: the phone is told that the car is waiting for the page.
-    ///
-    /// CarPlay has no web view of its own, so a page the user opens on the car
-    /// runs on the phone and reaches the car through the phone's screen
-    /// share — and iOS always asks the **user** to start a share, so the
-    /// phone has to say that the car is waiting.
+    /// AC142: the car page request records the address without starting screen relay.
     func test_AC142_the_phone_is_told_that_the_car_is_waiting_for_the_page() {
         let share = ScreenShareService(relay: ScreenRelayListener(port: 47313))
         defer { share.stopRelay() }
@@ -963,9 +958,9 @@ final class CarPlaySearchTests: XCTestCase {
         share.carRequestedPage("https://m.youtube.com")
 
         XCTAssertEqual(share.pendingCarPage, "https://m.youtube.com",
-                       "the phone has to say that the car is waiting for the page")
-        XCTAssertTrue(share.isWaitingForBroadcast,
-                      "the relay has to be listening before the user picks the broadcast")
+                       "the pending car page is tracked")
+        XCTAssertFalse(share.isWaitingForBroadcast,
+                        "browser navigation must be decoupled from screen relay")
     }
 
     /// AC158: car navigation does not hijack the phone's selected tab.
