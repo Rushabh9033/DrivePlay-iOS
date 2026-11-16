@@ -4,6 +4,7 @@ import WebKit
 public struct BookmarkItem: Identifiable {
     public let id = UUID()
     public let name: String
+    public let subtitle: String?
     public let urlString: String
     public let iconBgColor: Color
     public let systemImage: String?
@@ -12,6 +13,7 @@ public struct BookmarkItem: Identifiable {
     
     public init(
         name: String,
+        subtitle: String? = nil,
         urlString: String,
         iconBgColor: Color = .clear,
         systemImage: String? = nil,
@@ -19,6 +21,7 @@ public struct BookmarkItem: Identifiable {
         labelColor: Color = .white
     ) {
         self.name = name
+        self.subtitle = subtitle
         self.urlString = urlString
         self.iconBgColor = iconBgColor
         self.systemImage = systemImage

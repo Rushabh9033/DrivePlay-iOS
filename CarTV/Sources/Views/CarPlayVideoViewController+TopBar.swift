@@ -77,7 +77,11 @@ extension InCarAutomotiveController {
         castContainer.isHidden = (tab != .cast)
         
         if tab == .browser {
-            openBrowserHome()
+            if let wv = webView, !wv.isHidden {
+                browserContainer.isHidden = false
+            } else {
+                openBrowser(url: URL(string: "https://m.youtube.com")!)
+            }
         } else {
             browserContainer.isHidden = true
         }

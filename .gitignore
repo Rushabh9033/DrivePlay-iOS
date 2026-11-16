@@ -17,3 +17,4 @@ scratch/
 # Agent workflow state and archives — not app source.
 cartv-m3u-iptv-player-cast/
 REA_workflow_Rushabh.zip
+build_device/

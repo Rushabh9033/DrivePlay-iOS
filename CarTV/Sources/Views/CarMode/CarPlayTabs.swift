@@ -19,6 +19,19 @@ protocol CarPlayTabActions: AnyObject {
     func pushBrowserAddressBar()
     /// A page of the browser opens on the phone.
     func openOnPhone(address: String)
+    /// A page of the browser opens directly on the car display.
+    func openInCarBrowser(address: String)
+    /// Opens the in-car browser directly with the floating keyboard presented.
+    func openInCarBrowserWithKeyboard()
+}
+
+extension CarPlayTabActions {
+    func openInCarBrowser(address: String) {
+        openOnPhone(address: address)
+    }
+    func openInCarBrowserWithKeyboard() {
+        openInCarBrowser(address: "https://m.youtube.com")
+    }
 }
 
 /// The four tabs the car's screen is built from.
@@ -346,54 +359,52 @@ enum CarPlayTemplates {
 
     // MARK: - Browser
 
-    /// The Browser tab: the way into the address bar, the page the phone shows
-    /// now, and the app's own sites.
-    ///
-    /// The tab itself is a **list**. A `CPSearchTemplate` is the only CarPlay
-    /// chrome with a text field, but the tab bar **rejects** one —
-    /// `-validateTemplates:` raises an `NSException` and the app dies at every
-    /// scene connect — so the address bar is pushed onto the stack instead.
+    /// The Browser tab bookmarks: quick ways into YouTube, Google, Twitch and search.
     static func browserSections(currentURL: String,
                                 owner: CarPlayTabActions?) -> [CPListSection] {
-        var top: [CPListItem] = []
+        var items: [CPListItem] = []
 
-        let addressBar = CPListItem(text: "Search or type a URL",
-                                    detailText: "The car's address bar",
-                                    image: UIImage(systemName: "magnifyingglass"))
-        addressBar.accessoryType = .disclosureIndicator
-        addressBar.handler = { _, completion in
-            owner?.pushBrowserAddressBar()
+        let yt = CPListItem(text: "YouTube",
+                            detailText: "Watch videos & live streams",
+                            image: UIImage(systemName: "play.rectangle.fill"))
+        yt.accessoryType = .disclosureIndicator
+        yt.handler = { _, completion in
+            owner?.openInCarBrowser(address: "https://m.youtube.com")
             completion()
         }
-        top.append(addressBar)
+        items.append(yt)
 
-        if !currentURL.isEmpty {
-            let now = CPListItem(text: "On the phone now",
-                                 detailText: currentURL,
-                                 image: UIImage(systemName: "safari.fill"))
-            now.handler = { _, completion in
-                owner?.openOnPhone(address: currentURL)
-                completion()
-            }
-            top.append(now)
+        let google = CPListItem(text: "Google",
+                                detailText: "Search the web",
+                                image: UIImage(systemName: "globe"))
+        google.accessoryType = .disclosureIndicator
+        google.handler = { _, completion in
+            owner?.openInCarBrowser(address: "https://www.google.com")
+            completion()
         }
+        items.append(google)
 
-        var sections = [CPListSection(items: top, header: "Browser", sectionIndexTitle: nil)]
-
-        for group in BrowserCatalog.groups {
-            let rows = group.items.map { site -> CPListItem in
-                let item = CPListItem(text: site.name,
-                                      detailText: site.urlString,
-                                      image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize))
-                item.handler = { _, completion in
-                    owner?.openOnPhone(address: site.urlString)
-                    completion()
-                }
-                return item
-            }
-            sections.append(CPListSection(items: rows, header: group.title, sectionIndexTitle: nil))
+        let search = CPListItem(text: "Search or Type URL",
+                                detailText: "Open in-car browser with floating keyboard",
+                                image: UIImage(systemName: "keyboard"))
+        search.accessoryType = .disclosureIndicator
+        search.handler = { _, completion in
+            owner?.openInCarBrowserWithKeyboard()
+            completion()
         }
-        return sections
+        items.append(search)
+
+        let twitch = CPListItem(text: "Twitch",
+                                detailText: "Live gaming & esports",
+                                image: UIImage(systemName: "gamecontroller.fill"))
+        twitch.accessoryType = .disclosureIndicator
+        twitch.handler = { _, completion in
+            owner?.openInCarBrowser(address: "https://m.twitch.tv")
+            completion()
+        }
+        items.append(twitch)
+
+        return [CPListSection(items: items, header: "Web & Video", sectionIndexTitle: nil)]
     }
 
     // MARK: - Rows
@@ -646,11 +657,11 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
     /// What a picked row does — the tests replace it, so nothing is loaded.
     var openAddress: (String) -> Void = { address in
         BrowserTabManager.shared.loadURLInActiveTab(address)
-        // The car has no web view of its own: the page runs on the phone and
-        // reaches the car through the phone's screen share. iOS always asks
-        // the **user** to start a share, so the phone has to say that the car
-        // is waiting.
         ScreenShareService.shared.carRequestedPage(address)
+        PlaybackManager.shared.prepareForCar()
+        if let url = URL(string: address) ?? URL(string: "https://\(address)") {
+            CarPlaySceneDelegate.shared?.openInCarBrowser(address: address)
+        }
     }
 
     /// Called after a result was picked — the car goes back to the list, the
@@ -690,7 +701,7 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
         for group in BrowserCatalog.groups {
             for site in group.items {
                 rows.append(Row(item: CPListItem(text: site.name,
-                                                  detailText: site.urlString,
+                                                  detailText: site.subtitle ?? site.urlString,
                                                   image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize)),
                                  address: site.urlString))
             }
@@ -742,7 +753,11 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
                                address: query))
         }
         for row in rows(currentURL: BrowserTabManager.shared.activeTabURL) {
-            guard query.isEmpty || row.address.localizedCaseInsensitiveContains(query) else { continue }
+            let matches = query.isEmpty ||
+                          row.address.localizedCaseInsensitiveContains(query) ||
+                          (row.item.text?.localizedCaseInsensitiveContains(query) ?? false) ||
+                          (row.item.detailText?.localizedCaseInsensitiveContains(query) ?? false)
+            guard matches else { continue }
             offered.append(row)
         }
 

@@ -187,6 +187,14 @@ extension InCarAutomotiveController {
     }
     
     public func openBrowserHome() {
+        videoContainer.isHidden = true
+        playerVC.player?.pause()
+        mirrorContainer.isHidden = true
+        if isMirroringActive {
+            handleMirrorClose()
+        }
+        searchOverlay.isHidden = true
+        
         self.view.isHidden = false
         self.browserContainer.isHidden = false
         if let win = self.view.window {
@@ -216,8 +224,36 @@ extension InCarAutomotiveController {
     }
     
     public func openBrowser(url: URL) {
+        videoContainer.isHidden = true
+        playerVC.player?.pause()
+        mirrorContainer.isHidden = true
+        if isMirroringActive {
+            handleMirrorClose()
+        }
+        searchOverlay.isHidden = true
+        
         self.view.isHidden = false
         self.browserContainer.isHidden = false
+        
+        var b = view.bounds
+        if (b.width <= 0 || b.height <= 0), let win = view.window ?? view.superview?.window {
+            b = win.bounds
+            view.frame = b
+        }
+        if b.width <= 0 || b.height <= 0 {
+            b = CGRect(x: 0, y: 0, width: 800, height: 480)
+            view.frame = b
+        }
+        
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.browserContainer.frame = b
+        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
+        self.browserToolbar.frame = CGRect(x: 0, y: 0, width: b.width, height: barH)
+        self.browserHomeScrollView.frame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        let webFrame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        CATransaction.commit()
+        
         if let win = self.view.window {
             win.bringSubviewToFront(self.view)
         } else if let sup = self.view.superview {
@@ -225,13 +261,12 @@ extension InCarAutomotiveController {
         }
         self.view.bringSubviewToFront(browserContainer)
         self.browserHomeScrollView.isHidden = true
-        self.browserUrlLabel.text = url.host ?? url.absoluteString
+        let hostOrString = url.host ?? url.absoluteString
+        self.browserUrlLabel.text = hostOrString
+        self.browserUrlTextField.text = hostOrString
+        self.browserUrlTextField.resignFirstResponder()
         self.browserUrlLabel.textColor = UIColor(white: 0.15, alpha: 1.0)
         self.browserBackBtn.tintColor = UIColor(white: 0.15, alpha: 1.0)
-        
-        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
-        let b = view.bounds
-        let webFrame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
         
         if self.webView == nil {
             let config = WKWebViewConfiguration()
@@ -248,10 +283,17 @@ extension InCarAutomotiveController {
         }
         
         if let wv = self.webView {
-            browserContainer.bringSubviewToFront(wv)
             wv.isHidden = false
             wv.load(URLRequest(url: url))
         }
+        browserContainer.bringSubviewToFront(browserToolbar)
+        browserContainer.bringSubviewToFront(browserScrollUpBtn)
+        browserContainer.bringSubviewToFront(browserScrollDownBtn)
+        browserContainer.bringSubviewToFront(floatingKeyboard)
+        BrowserTabManager.shared.loadURLInActiveTab(url.absoluteString)
+        
+        self.view.setNeedsLayout()
+        self.view.layoutIfNeeded()
     }
     
     @objc public func handleBrowserHome() {
@@ -262,14 +304,23 @@ extension InCarAutomotiveController {
         self.browserHomeScrollView.isHidden = false
         self.webView?.isHidden = true
         self.browserUrlLabel.text = "Enter a URL or search"
+        self.browserUrlTextField.text = ""
+        self.browserUrlTextField.resignFirstResponder()
         self.browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
         self.browserBackBtn.tintColor = UIColor(white: 0.70, alpha: 1.0)
+        hideFloatingKeyboard()
     }
     
     @objc public func handleBrowserClose() {
+        self.webView?.stopLoading()
         self.browserContainer.isHidden = true
-        switchTab(.home)
-        self.onCloseBrowser?()
+        self.browserUrlTextField.resignFirstResponder()
+        hideFloatingKeyboard()
+        if let onClose = self.onCloseBrowser {
+            onClose()
+        } else {
+            openCockpitHome()
+        }
     }
     
     @objc func handleBrowserBack() {
@@ -287,17 +338,29 @@ extension InCarAutomotiveController {
     }
     
     @objc func handleAddressBarTap() {
-        let alert = UIAlertController(title: "Browse Web", message: "Enter a website URL or search query", preferredStyle: .alert)
-        alert.addTextField { tf in
-            tf.placeholder = "https:// or search term"
-            tf.keyboardType = .URL
-            tf.autocapitalizationType = .none
+        toggleFloatingKeyboard()
+    }
+
+    @objc func handleKeyboardToggle() {
+        toggleFloatingKeyboard()
+    }
+
+    public func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        if textField === browserUrlTextField {
+            showFloatingKeyboard()
+            return false
         }
-        alert.addAction(UIAlertAction(title: "Go", style: .default) { [weak self, weak alert] _ in
-            // The alert is captured weakly: a strong capture would keep the
-            // alert alive through its own action — the alert holds the action,
-            // the action holds the alert.
-            guard let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        return true
+    }
+
+    @objc func handleBrowserMore() {
+        handleToggleFullscreen()
+    }
+
+    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        if textField === browserUrlTextField {
+            guard let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return true }
             let finalUrl: URL
             if text.hasPrefix("http://") || text.hasPrefix("https://") {
                 finalUrl = URL(string: text) ?? URL(string: "https://www.google.com")!
@@ -307,10 +370,13 @@ extension InCarAutomotiveController {
                 let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                 finalUrl = URL(string: "https://www.google.com/search?q=\(q)")!
             }
-            self?.openBrowser(url: finalUrl)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-        present(alert, animated: true)
+            openBrowser(url: finalUrl)
+            return true
+        } else if textField === searchBarField {
+            textField.resignFirstResponder()
+            return true
+        }
+        return true
     }
 
     /// Puts the page on the car's display.

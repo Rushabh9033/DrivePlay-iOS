@@ -23,6 +23,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     CPSearchTemplateDelegate,
     CarPlayTabActions {
 
+    public static private(set) var shared: CarPlaySceneDelegate?
     private var interfaceController: CPInterfaceController?
     public var carWindow: CPWindow?
     private var cancellables = Set<AnyCancellable>()
@@ -33,6 +34,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     private var castTemplate: CPListTemplate?
     private var browserTemplate: CPListTemplate?
     private var searchTemplate: CPSearchTemplate?
+    public var inCarController: InCarAutomotiveController?
     /// The Browser tab's own delegate — the search field in the **pushed**
     /// address bar is the car's address bar.
     private var browserSearch: CarPlayBrowserSearch?
@@ -50,13 +52,16 @@ public final class CarPlaySceneDelegate: UIResponder,
         to window: CPWindow
     ) {
         connect(interfaceController: interfaceController, window: window)
+        attachInCarView(to: window)
     }
 
     public func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
-        connect(interfaceController: interfaceController, window: templateApplicationScene.carWindow)
+        let win = templateApplicationScene.carWindow
+        connect(interfaceController: interfaceController, window: win)
+        attachInCarView(to: win)
     }
 
     public func templateApplicationScene(
@@ -76,6 +81,7 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     private func connect(interfaceController: CPInterfaceController, window: CPWindow?) {
         NSLog("DRIVEPLAY CarPlay scene connected")
+        Self.shared = self
         self.interfaceController = interfaceController
         self.carWindow = window
         window?.overrideUserInterfaceStyle = .dark
@@ -121,6 +127,14 @@ public final class CarPlaySceneDelegate: UIResponder,
         home.leadingNavigationBarButtons = [
             CPBarButton(title: "Search", handler: { [weak self] _ in self?.pushChannelSearch() })
         ]
+        if let magImage = UIImage(systemName: "magnifyingglass") {
+            home.trailingNavigationBarButtons = [
+                CPBarButton(image: magImage, handler: { [weak self] _ in self?.pushChannelSearch() })
+            ]
+            browser.trailingNavigationBarButtons = [
+                CPBarButton(image: magImage, handler: { [weak self] _ in self?.openInCarBrowserWithKeyboard() })
+            ]
+        }
         home.emptyViewTitleVariants = ["No channels"]
         home.emptyViewSubtitleVariants = ["Add a playlist source in the DrivePlay app"]
         favorites.emptyViewTitleVariants = ["No favorites yet"]
@@ -135,10 +149,17 @@ public final class CarPlaySceneDelegate: UIResponder,
         bar.delegate = self
         tabBarTemplate = bar
 
-        interfaceController.setRootTemplate(bar, animated: false) { success, error in
+        interfaceController.setRootTemplate(bar, animated: false) { [weak self, weak window] success, error in
             if !success {
                 NSLog("DRIVEPLAY setRootTemplate failed: %@", String(describing: error))
             }
+            if let window = window, let self = self {
+                self.attachInCarView(to: window)
+            }
+        }
+
+        if let window = window {
+            attachInCarView(to: window)
         }
 
         observeState()
@@ -157,8 +178,82 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
+    public func attachInCarView(to window: CPWindow) {
+        let inCar = inCarController ?? InCarAutomotiveController()
+        self.inCarController = inCar
+        
+        inCar.onCloseBrowser = { [weak self] in
+            self?.hideInCarOverlay()
+        }
+        
+        inCar.view.removeFromSuperview()
+        window.addSubview(inCar.view)
+        window.bringSubviewToFront(inCar.view)
+        
+        var b = window.bounds
+        if b.width <= 0 || b.height <= 0 {
+            b = CGRect(x: 0, y: 0, width: 800, height: 480)
+        }
+        inCar.view.frame = b
+        inCar.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        inCar.view.layer.zPosition = 999999
+        inCar.view.isHidden = true
+        inCar.view.setNeedsLayout()
+        inCar.view.layoutIfNeeded()
+    }
+
+    public func showInCarOverlay() {
+        guard let win = carWindow, let inCar = inCarController else { return }
+        
+        if inCar.view.superview !== win {
+            inCar.view.removeFromSuperview()
+            win.addSubview(inCar.view)
+        }
+        
+        var b = win.bounds
+        if b.width <= 0 || b.height <= 0 {
+            b = CGRect(x: 0, y: 0, width: 800, height: 480)
+        }
+        inCar.view.frame = b
+        inCar.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        inCar.view.layer.zPosition = 999999
+        inCar.view.isHidden = false
+        inCar.browserContainer.isHidden = false
+        inCar.browserContainer.frame = b
+        
+        let barH: CGFloat = inCar.browserToolbar.isHidden ? 0 : 44
+        inCar.browserToolbar.frame = CGRect(x: 0, y: 0, width: b.width, height: barH)
+        inCar.webView?.frame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        inCar.browserHomeScrollView.frame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        
+        win.bringSubviewToFront(inCar.view)
+        inCar.view.setNeedsLayout()
+        inCar.view.layoutIfNeeded()
+        
+        DispatchQueue.main.async {
+            win.bringSubviewToFront(inCar.view)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            win.bringSubviewToFront(inCar.view)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            win.bringSubviewToFront(inCar.view)
+        }
+    }
+
+    public func hideInCarOverlay() {
+        guard let inCar = inCarController else { return }
+        inCar.view.isHidden = true
+        inCar.browserContainer.isHidden = true
+        inCar.hideFloatingKeyboard()
+        if let win = carWindow {
+            win.sendSubviewToBack(inCar.view)
+        }
+    }
+
     private func disconnect() {
         NSLog("DRIVEPLAY CarPlay scene disconnected")
+        if Self.shared === self { Self.shared = nil }
         cancellables.removeAll()
         // There is no car any more: the picture cannot go there, so the button
         // on the phone falls back to the system's list of displays — and a
@@ -169,6 +264,8 @@ public final class CarPlaySceneDelegate: UIResponder,
         ScreenShareService.shared.stopRelay()
         interfaceController = nil
         carWindow = nil
+        inCarController?.view.removeFromSuperview()
+        inCarController = nil
         tabBarTemplate = nil
         homeTemplate = nil
         favoritesTemplate = nil
@@ -226,6 +323,12 @@ public final class CarPlaySceneDelegate: UIResponder,
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshCast() }
             .store(in: &cancellables)
+
+        // The browser's active tab changes as the user navigates.
+        BrowserTabManager.shared.$activeTabURL
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshBrowser() }
+            .store(in: &cancellables)
     }
 
     /// The catalogue and the favourites are one thing: they come from the same
@@ -252,6 +355,13 @@ public final class CarPlaySceneDelegate: UIResponder,
                                                                   prefersVideo: Self.isEntitledToVideo))
     }
 
+    private func refreshBrowser() {
+        browserTemplate?.updateSections(CarPlayTemplates.browserSections(
+            currentURL: BrowserTabManager.shared.activeTabURL,
+            owner: self
+        ))
+    }
+
     /// The state the Cast tab shows — read from the app, not guessed.
     private func currentCastState() -> CarPlayCastState {
         let playback = PlaybackManager.shared
@@ -268,15 +378,17 @@ public final class CarPlaySceneDelegate: UIResponder,
     /// The tab the user picked is brought up to date.
     public func tabBarTemplate(_ tabBarTemplate: CPTabBarTemplate, didSelect selectedTemplate: CPTemplate) {
         if selectedTemplate === homeTemplate {
+            inCarController?.switchTab(.home)
             refreshCatalogue()
         } else if selectedTemplate === favoritesTemplate {
+            inCarController?.switchTab(.favorites)
             refreshCatalogue()
         } else if selectedTemplate === castTemplate {
+            inCarController?.switchTab(.cast)
             refreshCast()
         } else if selectedTemplate === browserTemplate {
-            // The Browser tab opens with the address bar — the header the
-            // user asked for. The list is behind it, one "back" away.
-            pushBrowserAddressBar()
+            showInCarOverlay()
+            inCarController?.openBrowser(url: URL(string: "https://m.youtube.com")!)
         }
     }
 
@@ -342,20 +454,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     /// stack. The stack is reset first, so it never piles up when the tab is
     /// picked again.
     func pushBrowserAddressBar() {
-        guard let controller = interfaceController else { return }
-        controller.popToRootTemplate(animated: false) { _, _ in
-            guard let controller = self.interfaceController,
-                  let delegate = self.browserSearch else { return }
-            let template = self.browserAddressBar ?? CPSearchTemplate()
-            template.delegate = delegate
-            self.browserAddressBar = template
-            controller.pushTemplate(template, animated: true) { success, error in
-                if !success {
-                    NSLog("DRIVEPLAY push the browser address bar failed: %@",
-                          String(describing: error))
-                }
-            }
-        }
+        openInCarBrowserWithKeyboard()
     }
 
     /// The address bar goes back to the list it was pushed from.
@@ -380,6 +479,23 @@ public final class CarPlaySceneDelegate: UIResponder,
     /// its own — and the screen share carries it to the car.
     func openOnPhone(address: String) {
         browserSearch?.openAddress(address)
+    }
+
+    /// Opens the page directly in the in-car browser on the car display.
+    func openInCarBrowser(address: String) {
+        showInCarOverlay()
+        let target = address.hasPrefix("http") ? address : "https://\(address)"
+        if let url = URL(string: target) {
+            inCarController?.openBrowser(url: url)
+        }
+    }
+
+    func openInCarBrowserWithKeyboard() {
+        showInCarOverlay()
+        inCarController?.openBrowser(url: URL(string: "https://m.youtube.com")!)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.inCarController?.showFloatingKeyboard()
+        }
     }
 
     /// The picture moves between the phone and the car.

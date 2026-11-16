@@ -12,12 +12,10 @@ settings:
   ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   # Which CarPlay category this build asks for: "audio" or "video".
   #
-  # Apple grants one category per app and the capability lives on the app id,
-  # so a build is signed with the entitlement or it does not build at all. The
-  # setting picks the entitlements file and tells the app what it got — the two
-  # can never disagree. Flip it to "video" once the app id carries the CarPlay
-  # Video capability.
-  CARPLAY_CATEGORY: "audio"
+  # Apple granted the CarPlay Video capability (Case-ID 23260500) and the
+  # provisioning profile carries both carplay-audio and carplay-video.
+  # "video" is the permanent default so the car display renders video surfaces.
+  CARPLAY_CATEGORY: "video"
 targets:
   CarTV:
     type: application

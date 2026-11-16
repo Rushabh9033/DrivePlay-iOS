@@ -63,10 +63,12 @@
 		7FE963E7A4DAEC742ED94A12 /* RepositoryFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 671FFCFBF4B52CB13B4E0C76 /* RepositoryFixture.swift */; };
 		81AC77AE1B20895C3002ACA2 /* SatelliteHUDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A04CAD4C2764BB42458EC607 /* SatelliteHUDView.swift */; };
 		81C5059D7B6FEE76E9E2F904 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A59C540F931324D6BBFFF1FE /* CarPlaySceneDelegate.swift */; };
+		82F5EB48078E0EAE770320BB /* OfflineVaultPlaybackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9678C8A0B319E906CAE6D34D /* OfflineVaultPlaybackTests.swift */; };
 		84665A97E8FFE9C083D1F80C /* CarPlayVideoViewController+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15CEAE62362F830BC1F14A1A /* CarPlayVideoViewController+Actions.swift */; };
 		84C05ED561453098AA7D6D66 /* ChannelListViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FFC623BC9071E7CCC11EB1C /* ChannelListViewController.swift */; };
 		8A61BB63DC6EB89CC78D5D95 /* VideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CAABC03CEF597C95DE9315 /* VideoPlayerView.swift */; };
 		8C8DCED8C0DAA314F7F1432C /* ManageSourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABDD6DBEC202A89E6F788FBA /* ManageSourcesView.swift */; };
+		906E123CD5A1731266AE5219 /* VaultFileServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6276CFB58A8DED6668C811B8 /* VaultFileServer.swift */; };
 		9139E2E3772BC1DF46173152 /* VideoGravityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AEB1B0EF889ED91FF5E6F12 /* VideoGravityTests.swift */; };
 		92293B013EDDCF3C1968E986 /* ScreenRelayListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8A5597FD41761723E64C52 /* ScreenRelayListener.swift */; };
 		92F9375298903CFC96C3C23D /* OfflineVaultPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B309C9C793B25C735A380438 /* OfflineVaultPlayerView.swift */; };
@@ -97,6 +99,7 @@
 		D87018AEC96AFBFA19F57A30 /* DLNADIDLParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A9ED5AB8AA297D1B6D2A0C4 /* DLNADIDLParser.swift */; };
 		D9A138E7317B283B44A7816A /* CarPlayVideoViewController+TopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C0B8773D23A98BA97BE2A0 /* CarPlayVideoViewController+TopBar.swift */; };
 		DB0D56A3DADB6FE83413914C /* AppTabSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49D60FD6B6D45FBD7B0587F4 /* AppTabSelection.swift */; };
+		DC2B5CC23A1F217BFE891021 /* CarPlayFloatingKeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9331A4A468E6F9D44663B1B4 /* CarPlayFloatingKeyboardView.swift */; };
 		DFA73425D923970876E938AD /* VoiceSearchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EBC0E7318BA2CA3A519D86E /* VoiceSearchManager.swift */; };
 		E643A82AEA00546E3C9CAECA /* LocalMediaServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D2D492A0B41E01BAB352F9 /* LocalMediaServiceTests.swift */; };
 		E6EEEF646628A4DFD9C7F63F /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B2487BFCC418B47CB486D2 /* MainTabView.swift */; };
@@ -191,6 +194,7 @@
 		599B394ACC4E21F1EB9A095F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5A6B130EA1C48CFD1A50FA69 /* LocalImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalImportView.swift; sourceTree = "<group>"; };
 		624D0C41FD30B668BE9D7A06 /* AudioSubtitlePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSubtitlePickerSheet.swift; sourceTree = "<group>"; };
+		6276CFB58A8DED6668C811B8 /* VaultFileServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultFileServer.swift; sourceTree = "<group>"; };
 		64AF186F1D97EBAD2A93A594 /* SatelliteHUDService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SatelliteHUDService.swift; sourceTree = "<group>"; };
 		671FFCFBF4B52CB13B4E0C76 /* RepositoryFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryFixture.swift; sourceTree = "<group>"; };
 		676D6A625698B40DA8B1E3C7 /* CarTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarTVApp.swift; sourceTree = "<group>"; };
@@ -209,8 +213,10 @@
 		8B22AB55A1EC68C09EC4B4C5 /* GroupDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupDetailView.swift; sourceTree = "<group>"; };
 		8EBC0E7318BA2CA3A519D86E /* VoiceSearchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSearchManager.swift; sourceTree = "<group>"; };
 		8FF6C0368575F031D350B307 /* SourceHealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceHealthService.swift; sourceTree = "<group>"; };
+		9331A4A468E6F9D44663B1B4 /* CarPlayFloatingKeyboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayFloatingKeyboardView.swift; sourceTree = "<group>"; };
 		93E6CC92D6865B2906D51625 /* VideoToAudioExtractorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoToAudioExtractorView.swift; sourceTree = "<group>"; };
 		94D9DC9EBDCAC6984396B3BF /* URLPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLPolicy.swift; sourceTree = "<group>"; };
+		9678C8A0B319E906CAE6D34D /* OfflineVaultPlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineVaultPlaybackTests.swift; sourceTree = "<group>"; };
 		977038AB6F1A783507191569 /* VoiceSearchOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSearchOverlayView.swift; sourceTree = "<group>"; };
 		98B2487BFCC418B47CB486D2 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		9F5A81CC3E6BBE95A55039B0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -378,6 +384,7 @@
 				8FF6C0368575F031D350B307 /* SourceHealthService.swift */,
 				DA81770C7FE01C87C3AF17DD /* StoreKitManager.swift */,
 				94D9DC9EBDCAC6984396B3BF /* URLPolicy.swift */,
+				6276CFB58A8DED6668C811B8 /* VaultFileServer.swift */,
 				FA9D608FD94CC8260DC593BA /* VideoOutputHost.swift */,
 				8EBC0E7318BA2CA3A519D86E /* VoiceSearchManager.swift */,
 				8902B28CD6909A5A5AA004ED /* WatchHistoryStore.swift */,
@@ -390,6 +397,7 @@
 			children = (
 				1449E33A3D03DE0463D4359E /* CarModeDashboardView.swift */,
 				7F6808BDD3276867769367E1 /* CarPlayArtwork.swift */,
+				9331A4A468E6F9D44663B1B4 /* CarPlayFloatingKeyboardView.swift */,
 				236B0BE20241265048A4A8F8 /* CarPlayTabs.swift */,
 				0FFC623BC9071E7CCC11EB1C /* ChannelListViewController.swift */,
 				A04CAD4C2764BB42458EC607 /* SatelliteHUDView.swift */,
@@ -433,6 +441,7 @@
 				E8D2D492A0B41E01BAB352F9 /* LocalMediaServiceTests.swift */,
 				EB4FE89D797F10035B55DECE /* M3UParserTests.swift */,
 				463785B668981A62F36DBF50 /* MiniPlayerTests.swift */,
+				9678C8A0B319E906CAE6D34D /* OfflineVaultPlaybackTests.swift */,
 				210A2E7D0AA4618E2DFC0435 /* PlaybackManagerTests.swift */,
 				0D17DA4A4701E1687D3FE8B3 /* PlexTests.swift */,
 				671FFCFBF4B52CB13B4E0C76 /* RepositoryFixture.swift */,
@@ -656,6 +665,7 @@
 				4700F1CF03724B4C0023C46A /* CarModeDashboardView.swift in Sources */,
 				26CB08A0D537030099356AD4 /* CarOutputSwitch.swift in Sources */,
 				CAAD18FA599CF8B8E75468CF /* CarPlayArtwork.swift in Sources */,
+				DC2B5CC23A1F217BFE891021 /* CarPlayFloatingKeyboardView.swift in Sources */,
 				81C5059D7B6FEE76E9E2F904 /* CarPlaySceneDelegate.swift in Sources */,
 				A7B51D910465EB7877BC30A2 /* CarPlayTabs.swift in Sources */,
 				84665A97E8FFE9C083D1F80C /* CarPlayVideoViewController+Actions.swift in Sources */,
@@ -711,6 +721,7 @@
 				1396B6BF0B8F22F3AE99F4EF /* Theme.swift in Sources */,
 				2400141565E9C426C5807B69 /* URLPolicy.swift in Sources */,
 				76F23EBB3F4CE032BEF9C49A /* UniversalOfflineVaultView.swift in Sources */,
+				906E123CD5A1731266AE5219 /* VaultFileServer.swift in Sources */,
 				23D97161DDFBD258CF293F0C /* VideoOutputHost.swift in Sources */,
 				8A61BB63DC6EB89CC78D5D95 /* VideoPlayerView.swift in Sources */,
 				2C05DA1BAF36739EC4476B03 /* VideoToAudioExtractorView.swift in Sources */,
@@ -744,6 +755,7 @@
 				E643A82AEA00546E3C9CAECA /* LocalMediaServiceTests.swift in Sources */,
 				FAF9D22F5ADDB54C354F500D /* M3UParserTests.swift in Sources */,
 				28D55EE642DD694C058A51A4 /* MiniPlayerTests.swift in Sources */,
+				82F5EB48078E0EAE770320BB /* OfflineVaultPlaybackTests.swift in Sources */,
 				709FF0D9973DD40A3DEB806E /* PlaybackManagerTests.swift in Sources */,
 				5A4D8A0344E0D719556FE279 /* PlexTests.swift in Sources */,
 				7FE963E7A4DAEC742ED94A12 /* RepositoryFixture.swift in Sources */,
@@ -782,7 +794,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CARPLAY_CATEGORY = audio;
+				CARPLAY_CATEGORY = video;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -862,7 +874,7 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CARPLAY_CATEGORY = audio;
+				CARPLAY_CATEGORY = video;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";

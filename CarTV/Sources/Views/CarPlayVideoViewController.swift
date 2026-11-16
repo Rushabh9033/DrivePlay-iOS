@@ -5,7 +5,7 @@ import Combine
 import ReplayKit
 
 // MARK: - In-Car Automotive Root Controller
-public final class InCarAutomotiveController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
+public final class InCarAutomotiveController: UIViewController, WKNavigationDelegate, UITextFieldDelegate, CarPlayFloatingKeyboardDelegate {
     
     // MARK: - Enums
     public enum ActiveTab: Int {
@@ -94,8 +94,10 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     let browserHomeBtn = UIButton(type: .custom)
     let browserUrlContainer = UIView()
     let browserUrlLabel = UILabel()
+    public let browserUrlTextField = UITextField()
     let browserReloadBtn = UIButton(type: .custom)
     let browserTabsBtn = UIButton(type: .custom)
+    let browserMoreBtn = UIButton(type: .custom)
     let browserCastBtn = UIButton(type: .custom)
     let browserFullscreenBtn = UIButton(type: .custom)
     let browserAABtn = UIButton(type: .custom)
@@ -104,6 +106,11 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     let browserScrollUpBtn = UIButton(type: .custom)
     let browserScrollDownBtn = UIButton(type: .custom)
     let browserProgressView = UIProgressView(progressViewStyle: .bar)
+    let browserKeyboardToggleBtn = UIButton(type: .custom)
+    
+    // In-App Floating Keyboard for Car Display (Apple Maps style)
+    public let floatingKeyboard = CarPlayFloatingKeyboardView()
+    public var isFloatingKeyboardVisible = false
     
     // Screen Mirroring Overlay
     let mirrorContainer = UIView()
@@ -153,6 +160,10 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
             self?.showCategory(title, channels: channels)
         }
 
+        if PlaylistStore.shared.channels.isEmpty {
+            PlaylistStore.shared.addSampleM3USource()
+        }
+
         switchTab(.home)
         observeState()
         refreshChannels()
@@ -160,7 +171,11 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
     
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let b = view.bounds
+        var b = view.bounds
+        if (b.width <= 0 || b.height <= 0), let win = view.window, win.bounds.width > 0 {
+            b = win.bounds
+            view.frame = b
+        }
         guard b.width > 0 && b.height > 0 else { return }
         
         let safeLeft = view.safeAreaInsets.left
@@ -217,9 +232,143 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
         mirrorSampleLayer.frame = mirrorContainer.bounds
         searchOverlay.frame = b
         
+        // 5. In-App Floating Keyboard Layout (Apple Maps in-car style)
+        let kbW: CGFloat = min(b.width - safeLeft - safeRight - 16, 680)
+        let kbH: CGFloat = min(215, max(160, b.height * 0.58))
+        let kbX: CGFloat = safeLeft + ((b.width - safeLeft - safeRight) - kbW) / 2
+        let kbY: CGFloat = isFloatingKeyboardVisible ? (b.height - kbH) : b.height
+        floatingKeyboard.frame = CGRect(x: kbX, y: kbY, width: kbW, height: kbH)
+        if isFloatingKeyboardVisible {
+            browserContainer.bringSubviewToFront(floatingKeyboard)
+            view.bringSubviewToFront(floatingKeyboard)
+        }
+        
         if let win = view.window {
             win.bringSubviewToFront(view)
         }
     }
     
+    // MARK: - In-App Floating Keyboard Controls
+    
+    public func showFloatingKeyboard() {
+        isFloatingKeyboardVisible = true
+        floatingKeyboard.isHidden = false
+        floatingKeyboard.layer.zPosition = 1000
+        browserContainer.bringSubviewToFront(floatingKeyboard)
+        view.bringSubviewToFront(floatingKeyboard)
+        
+        var b = self.view.bounds
+        if (b.width <= 0 || b.height <= 0), let win = view.window ?? view.superview?.window {
+            b = win.bounds
+        }
+        if b.width <= 0 || b.height <= 0 {
+            b = CGRect(x: 0, y: 0, width: 800, height: 480)
+        }
+        
+        let safeLeft = max(self.view.safeAreaInsets.left, 0)
+        let safeRight = max(self.view.safeAreaInsets.right, 0)
+        let kbW: CGFloat = min(b.width - safeLeft - safeRight - 16, 680)
+        let kbH: CGFloat = min(215, max(160, b.height * 0.58))
+        let kbX: CGFloat = safeLeft + ((b.width - safeLeft - safeRight) - kbW) / 2
+        
+        if self.floatingKeyboard.frame.origin.y >= b.height || self.floatingKeyboard.frame.width <= 0 {
+            self.floatingKeyboard.frame = CGRect(x: kbX, y: b.height, width: kbW, height: kbH)
+        }
+        
+        UIView.animate(withDuration: 0.28, delay: 0, options: [.curveEaseOut]) {
+            self.floatingKeyboard.frame = CGRect(x: kbX, y: b.height - kbH, width: kbW, height: kbH)
+            self.floatingKeyboard.alpha = 1.0
+        }
+    }
+
+    public func hideFloatingKeyboard() {
+        guard isFloatingKeyboardVisible else { return }
+        isFloatingKeyboardVisible = false
+        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseIn], animations: {
+            let b = self.view.bounds
+            self.floatingKeyboard.frame.origin.y = b.height
+            self.floatingKeyboard.alpha = 0.0
+        }, completion: { _ in
+            self.floatingKeyboard.isHidden = true
+        })
+    }
+
+    public func toggleFloatingKeyboard() {
+        if isFloatingKeyboardVisible {
+            hideFloatingKeyboard()
+        } else {
+            showFloatingKeyboard()
+        }
+    }
+    
+    // MARK: - CarPlayFloatingKeyboardDelegate
+    
+    public func floatingKeyboard(_ keyboard: CarPlayFloatingKeyboardView, didEnterText text: String) {
+        let current = browserUrlTextField.text ?? ""
+        let updated = current + text
+        browserUrlTextField.text = updated
+        browserUrlLabel.text = updated
+    }
+    
+    public func floatingKeyboardDidTapDelete(_ keyboard: CarPlayFloatingKeyboardView) {
+        var current = browserUrlTextField.text ?? ""
+        if !current.isEmpty {
+            current.removeLast()
+            browserUrlTextField.text = current
+            browserUrlLabel.text = current.isEmpty ? "Enter a URL or search" : current
+        }
+    }
+    
+    public func floatingKeyboardDidTapClear(_ keyboard: CarPlayFloatingKeyboardView) {
+        browserUrlTextField.text = ""
+        browserUrlLabel.text = "Enter a URL or search"
+    }
+    
+    public func floatingKeyboardDidTapGo(_ keyboard: CarPlayFloatingKeyboardView) {
+        hideFloatingKeyboard()
+        submitCurrentBrowserUrl()
+    }
+    
+    public func floatingKeyboardDidTapDismiss(_ keyboard: CarPlayFloatingKeyboardView) {
+        hideFloatingKeyboard()
+    }
+    
+    public func floatingKeyboard(_ keyboard: CarPlayFloatingKeyboardView, didSelectQuickItem text: String) {
+        if text.contains(".") && !text.hasPrefix(".") {
+            let target = text.hasPrefix("http") ? text : "https://\(text)"
+            browserUrlTextField.text = text
+            browserUrlLabel.text = text
+            hideFloatingKeyboard()
+            if let u = URL(string: target) {
+                openBrowser(url: u)
+            }
+        } else {
+            let current = browserUrlTextField.text ?? ""
+            let updated: String
+            if text == "https://" && current.isEmpty {
+                updated = text
+            } else {
+                updated = current + text
+            }
+            browserUrlTextField.text = updated
+            browserUrlLabel.text = updated
+        }
+    }
+    
+    public func submitCurrentBrowserUrl() {
+        let query = browserUrlTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !query.isEmpty else { return }
+        
+        let targetURL: URL
+        if query.hasPrefix("http://") || query.hasPrefix("https://") {
+            targetURL = URL(string: query) ?? URL(string: "https://www.google.com/search?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!
+        } else if query.contains(".") && !query.contains(" ") {
+            targetURL = URL(string: "https://\(query)") ?? URL(string: "https://www.google.com/search?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!
+        } else {
+            let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            targetURL = URL(string: "https://www.google.com/search?q=\(encoded)")!
+        }
+        
+        openBrowser(url: targetURL)
+    }
 }

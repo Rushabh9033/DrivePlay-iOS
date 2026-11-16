@@ -2,6 +2,14 @@ import Foundation
 import AVKit
 import MediaPlayer
 import Combine
+import os
+
+/// The player's own log.
+///
+/// `os_log`, not `NSLog`: an `NSLog` line goes to the process's **stderr** and
+/// never reaches the device's unified log, so the car's own log said nothing
+/// about the picture. An `os_log` line is in the device log like any other.
+let carPlaybackLog = Logger(subsystem: "com.rushabh.cartvv", category: "CarPlayback")
 
 public enum PlayerPresentationMode: Equatable, Sendable {
     case hidden
@@ -131,42 +139,73 @@ public final class PlaybackManager: ObservableObject {
     /// Every offer builds the player again, so the count is what proves the
     /// hand-off does not offer the same picture over and over.
     private(set) var offerCount: Int = 0
-    
+
+    /// The server that hands the vault's file to the player as an HTTP URL.
+    ///
+    /// The car's display is fed by the system's own video target — a process
+    /// **outside** the app's sandbox — and a `file://` URL inside the container
+    /// is invisible to it. The server lives as long as the file is played.
+    private var vaultServer: VaultFileServer?
+
     public init() {
         setupAudioSession()
         setupRemoteCommands()
     }
     
     public func play(channel: Channel, presentation: PlayerPresentationMode = .docked) {
+        // A file of the vault is **served over HTTP** and the player is given
+        // that URL: the car's display is fed by the system's own video target —
+        // a process that runs **outside** the app's sandbox — and it cannot open
+        // a file inside the container. The item then fails with -11870
+        // (`AVErrorExternalPlaybackNotSupportedForAsset`) the moment the car's
+        // route takes the picture, and the video dies on the phone *and* on
+        // the car. Any other channel ends the file's server.
+        vaultServer?.stop()
+        vaultServer = nil
+        var assetURL = channel.streamURL
+        if channel.streamURL.isFileURL {
+            if let server = VaultFileServer(fileURL: channel.streamURL), let served = server.start() {
+                vaultServer = server
+                assetURL = served
+            } else {
+                // The car's video target cannot open a file inside the
+                // container: the video would die there with -11870. Say so in
+                // the device's log instead of failing silently.
+                carPlaybackLog.error("the vault's file could not be served — the car cannot play it")
+            }
+        }
         self.currentChannel = channel
         self.presentationMode = presentation
         self.isBuffering = true
         self.currentTime = 0
-        
+
         let isLikelyLive = channel.streamURL.absoluteString.contains(".m3u8") ||
                            channel.groupTitle.lowercased().contains("live") ||
                            channel.groupTitle.lowercased().contains("tv") ||
                            channel.groupTitle.lowercased().contains("news")
         self.isLiveStream = isLikelyLive
         self.duration = 0
-        
+
         if presentation == .fullscreen {
             setOrientation(.landscapeRight)
         }
-        
-        // Record playlist-wise watch history
+
+        // Record playlist-wise watch history. The vault's file is recorded as
+        // the **file**, not as the served URL: the served URL dies with the
+        // server, and a "watch again" row must not point at a port that is
+        // gone.
         WatchHistoryStore.shared.recordWatch(channel)
-        
+
         // Clean up previous item observers before setting new item
         cleanupObservers()
-        
+
         // Fast-loading AVURLAsset with native AppleCoreMedia user-agent
         let asset: AVURLAsset
-        if channel.streamURL.isFileURL {
-            asset = AVURLAsset(url: channel.streamURL)
+        if assetURL.isFileURL {
+            asset = AVURLAsset(url: assetURL)
         } else {
             asset = AVURLAsset(
-                url: channel.streamURL,
+                url: assetURL,
                 options: [
                     "AVURLAssetHTTPHeaderFieldsKey": [
                         "User-Agent": "AppleCoreMedia/1.0.0 (iPhone; iOS 18.0)",
@@ -231,16 +270,13 @@ public final class PlaybackManager: ObservableObject {
     }
     
     public func playOffline(item: LocalVideoItem, inLandscape: Bool = true) {
-        let url = LocalMediaService.shared.getFileURL(for: item)
-        let channel = Channel(
-            id: item.id,
-            name: item.title,
-            streamURL: url,
-            groupTitle: "Offline Vault",
-            logoURL: nil,
-            duration: item.duration
-        )
-        play(channel: channel, presentation: inLandscape ? .fullscreen : .docked)
+        play(channel: Channel(id: item.id,
+                              name: item.title,
+                              streamURL: LocalMediaService.shared.getFileURL(for: item),
+                              groupTitle: "Offline Vault",
+                              logoURL: nil,
+                              duration: item.duration),
+             presentation: inLandscape ? .fullscreen : .docked)
     }
     
     /// Plays the live screen-share stream.
@@ -250,6 +286,10 @@ public final class PlaybackManager: ObservableObject {
     /// to AirPlay receivers, so a head unit that is not CarPlay can show it too.
     public func playScreenShare(url: URL, title: String) {
         cleanupObservers()
+
+        // The vault's file is not played any more: its server goes with it.
+        vaultServer?.stop()
+        vaultServer = nil
 
         let playerItem = AVPlayerItem(url: url)
         resetMediaSelectionState()
@@ -419,6 +459,10 @@ public final class PlaybackManager: ObservableObject {
         // A new hand-off: the ladder of the old one stops here.
         handOffGeneration += 1
         pictureIntent = .car
+        // The frames need somewhere to go from now on: the phone's own view
+        // is not drawn while the CarPlay scene is in front, so the app keeps
+        // an output of its own for as long as the picture is wanted on the car.
+        updateVideoOutput()
         // The picture may be allowed to leave the phone again.
         player?.allowsExternalPlayback = true
         // The mode the phone has to come back to when the picture is taken
@@ -498,10 +542,45 @@ public final class PlaybackManager: ObservableObject {
         p.allowsExternalPlayback = true
         updateNowPlayingInfo()
         if let item = p.currentItem {
-            p.replaceCurrentItem(with: item)
+            // The offer brings the picture to the car again, so the system
+            // looks at the route again — and **attaching an item that is
+            // already playing starts it over**: the player resets it to zero
+            // while it prepares it again, and a seek that follows is thrown
+            // away with it (measured on the device: the playhead jumped back
+            // to 0 after every offer — the clip played again and again, and
+            // the phone said "Loading Stream…" the whole time).
+            //
+            // So the offer brings a **new** item for the same asset, and the
+            // new one starts where the old one was.
+            let position = p.currentTime()
+            let fresh = AVPlayerItem(asset: item.asset)
+            fresh.preferredForwardBufferDuration = item.preferredForwardBufferDuration
+            fresh.automaticallyPreservesTimeOffsetFromLive = item.automaticallyPreservesTimeOffsetFromLive
+            fresh.canUseNetworkResourcesForLiveStreamingWhilePaused =
+                item.canUseNetworkResourcesForLiveStreamingWhilePaused
+            p.replaceCurrentItem(with: fresh)
+            // The observers belong to the item — the new one has to be
+            // watched, or the phone keeps saying "Loading Stream…".
+            setupObservers(for: fresh)
+            if !isLiveStream, position.isValid, position.seconds > 0 {
+                // A clip that has **ended** starts again: there is nothing to
+                // keep, and the car wants to see the video.
+                let length = item.duration.seconds
+                let ended = length.isFinite && length > 0 && position.seconds >= length - 0.05
+                fresh.seek(to: ended ? .zero : position)
+            }
         }
         p.play()
         isPlaying = true
+        // What the system thinks of the picture: the route it picked, whether
+        // the item is playing, and whether the picture is somewhere else.
+        // The log is the only place these three can be read together.
+        carPlaybackLog.info("""
+            offer \(self.offerCount): external \(p.isExternalPlaybackActive) \
+            status \(p.timeControlStatus.rawValue) \
+            time \(String(format: "%.1f", p.currentTime().seconds)) \
+            rate \(p.rate)
+            """)
     }
 
     /// The user is about to pick a route, so the video is offered to the car's
@@ -525,6 +604,9 @@ public final class PlaybackManager: ObservableObject {
         pictureIntent = .phone
         systemSaysPictureIsOnCar(false)
         if wasOnCar { presentationMode = phonePresentationMode }
+        // The picture is wanted on the phone again: the output the car needed
+        // is not needed now.
+        updateVideoOutput()
     }
 
     /// Keeps the picture running while the phone is minimised or locked.
@@ -556,7 +638,11 @@ public final class PlaybackManager: ObservableObject {
         // car owns it, or the minimised bar does. Either way the frames need
         // an output of the app's own, or the item waits for one that never
         // comes and the car's display stays black.
-        if presentationMode == .hidden || presentationMode == .mini {
+        //
+        // The third case is the picture **on its way to the car**: the phone's
+        // own view is no output then — the CarPlay scene is in front, so the
+        // phone's view is not drawn — and the car's display gets nothing.
+        if presentationMode == .hidden || presentationMode == .mini || pictureIntent == .car {
             videoOutput.attach(to: p)
         } else {
             videoOutput.detach()
@@ -607,6 +693,8 @@ public final class PlaybackManager: ObservableObject {
         cleanupObservers()
         resetMediaSelectionState()
         videoOutput.detach()
+        vaultServer?.stop()
+        vaultServer = nil
         player?.pause()
         player = nil
         currentChannel = nil
@@ -635,8 +723,17 @@ public final class PlaybackManager: ObservableObject {
         setOrientation(.landscapeRight)
     }
     
+    /// Leaves the fullscreen player.
+    ///
+    /// The fullscreen player's **dismissal** calls this — and the dismissal
+    /// also happens when the **car** takes the picture. The mode must not go
+    /// back to the phone's then: the phone would draw the picture again, the
+    /// app's own output would be detached with it, and the car — whose
+    /// picture depends on that output — would get no frames at all.
     public func exitLandscapeFullscreen() {
-        presentationMode = .docked
+        if presentationMode == .fullscreen {
+            presentationMode = .docked
+        }
         setOrientation(.portrait)
     }
     
@@ -749,7 +846,7 @@ public final class PlaybackManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 let active = p.isExternalPlaybackActive
-                NSLog("DRIVEPLAY external playback active: %@", active ? "yes" : "no")
+                carPlaybackLog.info("the system says the picture is on the car: \(active)")
                 self.systemSaysPictureIsOnCar(active)
             }
         }
