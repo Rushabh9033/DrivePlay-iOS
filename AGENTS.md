@@ -1062,7 +1062,6 @@ it is set in `project.yml`.
   takes the player — or the share's end would kill the browser's picture.
 
 ## Gotchas from the twentieth pass (2026-11-05, the offline vault on the car)
-
 - **`-11870` is `AVErrorExternalPlaybackNotSupportedForAsset`, and it is about
   the **asset**, not the media stack.** The iOS 27 SDK header says so
   (`AVError.h`: `AVErrorExternalPlaybackNotSupportedForAsset = -11870`). It
@@ -1127,6 +1126,43 @@ it is set in `project.yml`.
   bytes from `SecRandomCopyBytes` in hex — a v4 UUID carries 122 bits, not the
   128 its length suggests. The server binds to the **loopback**, so the token
   is the only thing between another app on the phone and the user's own media.
+
+## Gotchas from the twenty-first pass (2026-11-16, the black screen and the car's browser)
+
+- **An `@objc(Name)` attribute strips the module prefix — and the manifest
+  names the class by its qualified name.** `@objc(CarPlaySceneDelegate)` gives
+  the class the runtime name "CarPlaySceneDelegate", while the manifest asks
+  for "CarTV.CarPlaySceneDelegate" → `NSClassFromString` answers **nil** → a
+  scene built from the manifest gets **no delegate** → CarPlay raises an
+  NSException in `-[CPTemplateApplicationScene _deliverInterfaceControllerToDelegate]`
+  → SIGABRT → the app dies → the phone's screen is black. The path where UIKit
+  asks the app (`configurationForConnecting`) sets `delegateClass` to the class
+  **object**, so it masks the mismatch: the crash only happens when the **car
+  launches the app**, because that is the one path where the manifest is the
+  only source of the configuration. AC177 reads the **running** app's manifest
+  and pins it.
+- **The `__objc_classname` section of the built binary is the runtime-name
+  table.** A class with `@objc(Name)` appears there under the bare name; a
+  class without one appears mangled (`_TtC5CarTV20CarPlaySceneDelegate`) and
+  its runtime name is the module-qualified one. `otool -s __TEXT
+  __objc_classname` on the built dylib answers "does this name resolve?"
+  without a device.
+- **The CarPlay Simulator's car display *does* have accessibility elements.**
+  The app icons are `AXButton`s whose `AXIdentifier` is the icon's SF Symbol
+  ("car.fill", "house", "siri", "play.fill" …), so a tap can be made **by
+  name** (`AXPress`) instead of by a blind coordinate click — and the screen
+  can be read without a screenshot.
+- **CarPlay's private vehicle-window role is real.** The SDK does not declare
+  it (there is no `UISceneSessionRoleCarPlay` in any header), but UIKitCore
+  exports the private symbol `__UIWindowSceneSessionRoleCarPlay`
+  (`UIKit.tbd`), and the shipping app **CarDash** declares the role
+  `"UIWindowSceneSessionRoleCarPlay"` → `UIWindowScene` in its manifest
+  (`~/cardash-re/out/Info.plist.txt`). The SDK's own API has **no** web
+  template: `CPInterfaceController` accepts only `CPTemplate`s.
+- **A CarPlay session dies with the USB connection and with a reinstall.**
+  The simulator's car display then freezes on the last frame (its AX tree
+  still lists the old buttons) and the app's CarPlay scene never connects —
+  the app is fine, the *link* is gone.
 
 ## Measurement traps (both of these caused wrong conclusions here)
 

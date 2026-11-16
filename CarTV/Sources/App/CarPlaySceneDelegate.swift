@@ -16,7 +16,14 @@ import Combine
 ///
 /// This delegate must never touch `CPWindow.rootViewController` — CarPlay owns that
 /// window and its template stack.
-@objc(CarPlaySceneDelegate)
+///
+/// The class carries **no** `@objc(Name)`: the attribute gives the class the runtime
+/// name "CarPlaySceneDelegate" — without the module prefix — while the manifest
+/// asks for "CarTV.CarPlaySceneDelegate". `NSClassFromString` then answers nil,
+/// a scene created from the manifest gets **no delegate**, and CarPlay raises an
+/// NSException in `_deliverInterfaceControllerToDelegate`: SIGABRT, the app dies,
+/// and the phone's screen is black. The manifest's name and the class's runtime
+/// name have to agree (see AC177).
 public final class CarPlaySceneDelegate: UIResponder,
     CPTemplateApplicationSceneDelegate,
     CPTabBarTemplateDelegate,
@@ -80,6 +87,12 @@ public final class CarPlaySceneDelegate: UIResponder,
         self.interfaceController = interfaceController
         self.carWindow = window
         window?.overrideUserInterfaceStyle = .dark
+
+        // The car is here — ask for the **experimental vehicle window**, the
+        // one mechanism that could put a real WKWebView on the car's display
+        // (the documented CarPlay API has no web template at all). The probe
+        // logs what the system answers.
+        CarPlayWindowProbe.requestVehicleWindow()
 
         // The artwork has to be drawn for the **car's** screen — its scale is
         // not the phone's.

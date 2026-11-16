@@ -300,7 +300,7 @@ public final class CarBrowserStream: ObservableObject {
             // A black picture and a page look the same on the car's display —
             // both are "nothing". The brightness is the only thing that tells
             // them apart from inside the app.
-            carBrowserLog.info("frame \(self.framesSent) of \(self.address) — brightness \(Self.brightness(of: buffer))")
+            carBrowserLog.info("frame \(self.framesSent) of \(CredentialRedactor.safeForLog(self.address)) — brightness \(Self.brightness(of: buffer))")
         }
         writer?.append(pixelBuffer: buffer,
                        presentationTime: CMTime(value: framesSent, timescale: 30))
@@ -342,7 +342,7 @@ public final class CarBrowserStream: ObservableObject {
         var onFail: (String) -> Void = { _ in }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            carBrowserLog.info("the page is loaded: \(webView.url?.absoluteString ?? "?")")
+            carBrowserLog.info("the page is loaded: \(webView.url.map { CredentialRedactor.safeForLog($0) } ?? "?")")
             onFinish(webView.url)
         }
 

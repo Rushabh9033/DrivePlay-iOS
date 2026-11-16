@@ -1,6 +1,9 @@
 import UIKit
 
-@objc(ExternalDisplaySceneDelegate)
+/// No `@objc(Name)` here either: the manifest asks for
+/// "CarTV.ExternalDisplaySceneDelegate", and an `@objc(Name)` attribute would give
+/// the class the runtime name "ExternalDisplaySceneDelegate" — without the module
+/// prefix — so the manifest's name would not resolve (see AC177).
 public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     public var window: UIWindow?
     /// The controller shown on the external display. Its screen capture has to be

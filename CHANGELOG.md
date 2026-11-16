@@ -26,6 +26,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The phone's screen went black when the car launched the app.**
+  The scene delegates carried an `@objc(Name)` attribute, which gives a class
+  the Objective-C runtime name **without** the module prefix
+  ("CarPlaySceneDelegate"), while the manifest asks for
+  "CarTV.CarPlaySceneDelegate". `NSClassFromString` answered **nil**, so a
+  scene built from the manifest — which is what happens when the **car**
+  launches the app, before the app delegate can be asked — got **no delegate**,
+  and CarPlay raised an NSException inside
+  `-[CPTemplateApplicationScene _deliverInterfaceControllerToDelegate]`:
+  SIGABRT, the app died, and the phone's window was black. The three crashes
+  two seconds apart were the system relaunching the app in a loop. The
+  attribute is gone, the manifest's names resolve, and a test reads the
+  **running** app's manifest to keep it that way.
+
 - **An offline vault video never reached the car's display.**
   Two faults in one chain. The **fullscreen player's dismissal** — which is
   how the car takes the picture — put the phone's mode back to the docked

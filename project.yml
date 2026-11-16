@@ -79,6 +79,17 @@ targets:
             UIWindowSceneSessionRoleExternalDisplay:
               - UISceneConfigurationName: "External Display"
                 UISceneDelegateClassName: "CarTV.ExternalDisplaySceneDelegate"
+            # The **experimental** CarPlay window role. CarPlay's documented API
+            # has no web template at all, so the only candidate for a real
+            # WKWebView on a car's display is a UIWindow scene with this role —
+            # the same arrangement the shipping app CarDash declares
+            # ("UIWindowSceneSessionRoleCarPlay" → "UIWindowScene"). Whether
+            # iOS delivers it to this app is the experiment: the probe logs
+            # "DRIVEPLAY-WEB scene connected role=…".
+            UIWindowSceneSessionRoleCarPlay:
+              - UISceneClassName: "UIWindowScene"
+                UISceneConfigurationName: "CarPlay Vehicle Window"
+                UISceneDelegateClassName: "CarTV.CarPlayWindowProbe"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rushabh.cartvv

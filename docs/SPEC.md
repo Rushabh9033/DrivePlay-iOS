@@ -355,6 +355,7 @@ threw the video away (AC172).
 | 174 | An offline vault video **reaches the car's display** — the proof is the system's own (the player says it is playing externally), and the car has to be really there | `OfflineVaultPlaybackTests` |
 | 175 | A **browser** row asks the car for the video surface — the page reaches the car as a picture, so the row that opens it has to ask for video, the way a channel row does | `CarPlayTemplateTests` |
 | 176 | The offline vault's video is **served over HTTP** and the **player** is given that URL — a `file://` URL inside the app's container cannot be played by the car's video target (-11870), and the video dies on both screens | `OfflineVaultPlaybackTests` |
+| 177 | **Every** scene delegate class name in the manifest resolves — a name that does not resolve gives the scene **no delegate**, and CarPlay raises an NSException (SIGABRT) when the **car launches the app**: the phone's screen is black | `CarPlayResponsivenessTests` |
 
 ## Verification
 

@@ -1309,4 +1309,49 @@ final class CarPlayResponsivenessTests: XCTestCase {
         XCTAssertEqual(patcher.batchCount, 1,
                        "the car was told \(patcher.batchCount) times for one batch of pictures")
     }
+
+    /// AC177: **every** scene delegate class name in the manifest resolves.
+    ///
+    /// The manifest names the scene delegates by string
+    /// ("CarTV.CarPlaySceneDelegate"), and UIKit looks them up with
+    /// `NSClassFromString` when it builds a scene **from the manifest** — which
+    /// is what happens when the **car launches the app**, before the app
+    /// delegate can be asked.
+    ///
+    /// The delegate classes carried an `@objc(Name)` attribute, and that gives
+    /// a class the runtime name **without** the module prefix
+    /// ("CarPlaySceneDelegate"), so the manifest's name resolved to **nil**:
+    /// the scene got no delegate, CarPlay raised an NSException in
+    /// `-[CPTemplateApplicationScene _deliverInterfaceControllerToDelegate]`,
+    /// the app died with SIGABRT — and the phone's screen was black.
+    ///
+    /// The manifest is read from the **running** app: a copy in the repository
+    /// says nothing about what the phone really has.
+    func test_AC177_every_scene_delegate_name_in_the_manifest_resolves() throws {
+        let info = try XCTUnwrap(Bundle.main.infoDictionary, "the running app has no Info.plist")
+        let manifest = try XCTUnwrap(info["UIApplicationSceneManifest"] as? [String: Any],
+                                     "the app declares no scene manifest")
+        let configurations = try XCTUnwrap(manifest["UISceneConfigurations"] as? [String: Any],
+                                           "the manifest declares no scene configurations")
+
+        var checked = 0
+        for (role, entries) in configurations {
+            guard let list = entries as? [[String: Any]] else { continue }
+            for entry in list {
+                guard let name = entry["UISceneDelegateClassName"] as? String else { continue }
+                let resolved = NSClassFromString(name)
+                XCTAssertNotNil(resolved,
+                                "the manifest asks for \(name) (role \(role)), which does not resolve")
+                XCTAssertTrue(resolved is UISceneDelegate.Type,
+                              "\(name) is not a scene delegate")
+                checked += 1
+            }
+        }
+        XCTAssertGreaterThan(checked, 0, "the manifest names no scene delegate to check")
+
+        // The car's own scene delegate has to be the class the app builds.
+        let carPlayName = "CarTV.CarPlaySceneDelegate"
+        XCTAssertTrue(NSClassFromString(carPlayName) === CarPlaySceneDelegate.self,
+                      "the manifest asks for \(carPlayName), which is not the app's delegate")
+    }
 }
