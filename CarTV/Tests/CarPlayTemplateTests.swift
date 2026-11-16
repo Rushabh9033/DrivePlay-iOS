@@ -968,14 +968,11 @@ final class CarPlaySearchTests: XCTestCase {
                       "the relay has to be listening before the user picks the broadcast")
     }
 
-    /// AC158: a page the **car** asks for comes to the phone.
+    /// AC158: car navigation does not hijack the phone's selected tab.
     ///
-    /// The share the car needs captures **the phone's screen** — so the page
-    /// has to be *on* the screen. The tab used to be a `@State` inside the
-    /// view, so nothing outside it could bring the browser forward: the car
-    /// asked, the page opened on a tab the user was not looking at, and
-    /// neither screen showed anything.
-    func test_AC158_a_page_the_car_asks_for_comes_to_the_phone() {
+    /// The car and phone have independent presentation states: CarPlay actions
+    /// must not unexpectedly change the handset's active tab.
+    func test_AC158_car_navigation_does_not_hijack_phone_tab() {
         let share = ScreenShareService(relay: ScreenRelayListener(port: 47414))
         defer { share.stopRelay() }
 
@@ -984,8 +981,34 @@ final class CarPlaySearchTests: XCTestCase {
 
         share.carRequestedPage("https://m.youtube.com")
 
-        XCTAssertEqual(tabs.tab, .browser,
-                       "the phone did not come to the browser tab — the car would share the wrong screen")
+        XCTAssertEqual(tabs.tab, .home,
+                       "the phone unexpectedly switched tabs — CarPlay must not alter handset UI presentation")
+    }
+
+    /// Verifies that pressing the keyboard's search button in CarPlay triggers the search.
+    func test_keyboard_search_button_triggers_search() {
+        let browser = CarPlayBrowserSearch()
+        var opened: [String] = []
+        browser.openAddress = { opened.append($0) }
+        var dismissed = false
+        browser.dismissAddressBar = { dismissed = true }
+
+        browser.searchTemplate(CPSearchTemplate(), updatedSearchText: "https://google.com") { _ in }
+        browser.searchTemplateSearchButtonPressed(CPSearchTemplate())
+
+        XCTAssertEqual(opened, ["https://google.com"])
+        XCTAssertTrue(dismissed)
+    }
+
+    /// Verifies that CarPlay browser interactions keep the phone's tab intact.
+    func test_carplay_browser_interaction_preserves_handset_tab() {
+        let tabs = AppTabSelection.shared
+        tabs.tab = .settings
+
+        let browser = CarPlayBrowserSearch()
+        browser.openAddress("https://youtube.com")
+
+        XCTAssertEqual(tabs.tab, .settings, "handset tab must remain unchanged during CarPlay browsing")
     }
 }
 

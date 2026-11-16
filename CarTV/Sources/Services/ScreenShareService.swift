@@ -299,10 +299,8 @@ public final class ScreenShareService: ObservableObject {
     /// car is waiting, so the user knows the share has to be started.
     public func carRequestedPage(_ address: String) {
         pendingCarPage = address
-        // The share captures **the phone's screen**, so the page the car asked
-        // for has to be *on* the screen: the phone comes to its browser tab.
-        // Without this the car asks and nothing happens on either screen.
-        AppTabSelection.shared.tab = .browser
+        // The car requested a page. We record the pending address and prepare
+        // the relay, without changing the iPhone handset tab selection.
         startRelay()
     }
 

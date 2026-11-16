@@ -290,7 +290,6 @@ extension InCarAutomotiveController {
         browserContainer.bringSubviewToFront(browserScrollUpBtn)
         browserContainer.bringSubviewToFront(browserScrollDownBtn)
         browserContainer.bringSubviewToFront(floatingKeyboard)
-        BrowserTabManager.shared.loadURLInActiveTab(url.absoluteString)
         
         self.view.setNeedsLayout()
         self.view.layoutIfNeeded()

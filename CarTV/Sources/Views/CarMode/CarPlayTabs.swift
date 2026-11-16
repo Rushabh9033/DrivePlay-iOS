@@ -23,15 +23,27 @@ protocol CarPlayTabActions: AnyObject {
     func openInCarBrowser(address: String)
     /// Opens the in-car browser directly with the floating keyboard presented.
     func openInCarBrowserWithKeyboard()
+    /// Pushes the YouTube catalog hub on CarPlay.
+    func pushYouTubeHub()
+    /// Pushes the Google web discovery hub on CarPlay.
+    func pushGoogleDiscovery()
+    /// Pushes the Twitch gaming hub on CarPlay.
+    func pushTwitchHub()
+    /// Handles a web selection or URL from CarPlay.
+    func handleCarPlayWebSelection(_ address: String)
 }
 
 extension CarPlayTabActions {
     func openInCarBrowser(address: String) {
-        openOnPhone(address: address)
+        handleCarPlayWebSelection(address)
     }
     func openInCarBrowserWithKeyboard() {
-        openInCarBrowser(address: "https://m.youtube.com")
+        pushBrowserAddressBar()
     }
+    func pushYouTubeHub() {}
+    func pushGoogleDiscovery() {}
+    func pushTwitchHub() {}
+    func handleCarPlayWebSelection(_ address: String) {}
 }
 
 /// The four tabs the car's screen is built from.
@@ -359,52 +371,94 @@ enum CarPlayTemplates {
 
     // MARK: - Browser
 
-    /// The Browser tab bookmarks: quick ways into YouTube, Google, Twitch and search.
+    /// The Browser tab: rich, native content discovery, web search, and video platforms.
     static func browserSections(currentURL: String,
                                 owner: CarPlayTabActions?) -> [CPListSection] {
-        var items: [CPListItem] = []
+        var sections: [CPListSection] = []
 
+        // 1. Search & Web Navigation
+        var navItems: [CPListItem] = []
+        let search = CPListItem(text: "Search Web or Enter URL",
+                                detailText: "CarPlay address bar & search engine",
+                                image: UIImage(systemName: "magnifyingglass"))
+        search.accessoryType = .disclosureIndicator
+        search.handler = { _, completion in
+            owner?.pushBrowserAddressBar()
+            completion()
+        }
+        navItems.append(search)
+        sections.append(CPListSection(items: navItems, header: "Search & Navigation", sectionIndexTitle: nil))
+
+        // 2. Featured Web & Video Platforms
+        var videoItems: [CPListItem] = []
         let yt = CPListItem(text: "YouTube",
-                            detailText: "Watch videos & live streams",
+                            detailText: "Live streams, trending & music",
                             image: UIImage(systemName: "play.rectangle.fill"))
         yt.accessoryType = .disclosureIndicator
         yt.handler = { _, completion in
-            owner?.openInCarBrowser(address: "https://m.youtube.com")
+            owner?.pushYouTubeHub()
             completion()
         }
-        items.append(yt)
-
-        let google = CPListItem(text: "Google",
-                                detailText: "Search the web",
-                                image: UIImage(systemName: "globe"))
-        google.accessoryType = .disclosureIndicator
-        google.handler = { _, completion in
-            owner?.openInCarBrowser(address: "https://www.google.com")
-            completion()
-        }
-        items.append(google)
-
-        let search = CPListItem(text: "Search or Type URL",
-                                detailText: "Open in-car browser with floating keyboard",
-                                image: UIImage(systemName: "keyboard"))
-        search.accessoryType = .disclosureIndicator
-        search.handler = { _, completion in
-            owner?.openInCarBrowserWithKeyboard()
-            completion()
-        }
-        items.append(search)
+        videoItems.append(yt)
 
         let twitch = CPListItem(text: "Twitch",
-                                detailText: "Live gaming & esports",
+                                detailText: "Live gaming, esports & tech",
                                 image: UIImage(systemName: "gamecontroller.fill"))
         twitch.accessoryType = .disclosureIndicator
         twitch.handler = { _, completion in
-            owner?.openInCarBrowser(address: "https://m.twitch.tv")
+            owner?.pushTwitchHub()
             completion()
         }
-        items.append(twitch)
+        videoItems.append(twitch)
 
-        return [CPListSection(items: items, header: "Web & Video", sectionIndexTitle: nil)]
+        let pluto = CPListItem(text: "Pluto TV",
+                               detailText: "Free live web streaming channels",
+                               image: UIImage(systemName: "tv.fill"))
+        pluto.accessoryType = .disclosureIndicator
+        pluto.handler = { _, completion in
+            owner?.handleCarPlayWebSelection("https://pluto.tv")
+            completion()
+        }
+        videoItems.append(pluto)
+
+        let fame = CPListItem(text: "Famelack",
+                              detailText: "Live sports, highlights & events",
+                              image: UIImage(systemName: "sportscourt.fill"))
+        fame.accessoryType = .disclosureIndicator
+        fame.handler = { _, completion in
+            owner?.handleCarPlayWebSelection("https://famelack.com")
+            completion()
+        }
+        videoItems.append(fame)
+        sections.append(CPListSection(items: videoItems, header: "Featured Web & Video", sectionIndexTitle: nil))
+
+        // 3. Web Directories & Bookmarks
+        var directoryItems: [CPListItem] = []
+        let google = CPListItem(text: "Google",
+                                detailText: "Search, top news, tech & trending",
+                                image: UIImage(systemName: "globe"))
+        google.accessoryType = .disclosureIndicator
+        google.handler = { _, completion in
+            owner?.pushGoogleDiscovery()
+            completion()
+        }
+        directoryItems.append(google)
+
+        for site in BrowserCatalog.groups.flatMap(\.items).prefix(6) {
+            guard site.name != "Google" && site.name != "YouTube" && site.name != "Twitch" && site.name != "Pluto TV" else { continue }
+            let item = CPListItem(text: site.name,
+                                  detailText: site.subtitle ?? site.urlString,
+                                  image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize))
+            item.accessoryType = .disclosureIndicator
+            item.handler = { _, completion in
+                owner?.handleCarPlayWebSelection(site.urlString)
+                completion()
+            }
+            directoryItems.append(item)
+        }
+        sections.append(CPListSection(items: directoryItems, header: "Bookmarks & Directories", sectionIndexTitle: nil))
+
+        return sections
     }
 
     // MARK: - Rows
@@ -656,12 +710,7 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
 
     /// What a picked row does — the tests replace it, so nothing is loaded.
     var openAddress: (String) -> Void = { address in
-        BrowserTabManager.shared.loadURLInActiveTab(address)
-        ScreenShareService.shared.carRequestedPage(address)
-        PlaybackManager.shared.prepareForCar()
-        if let url = URL(string: address) ?? URL(string: "https://\(address)") {
-            CarPlaySceneDelegate.shared?.openInCarBrowser(address: address)
-        }
+        CarPlaySceneDelegate.shared?.handleCarPlayWebSelection(address)
     }
 
     /// Called after a result was picked — the car goes back to the list, the
@@ -787,10 +836,10 @@ final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
         dismissAddressBar()
     }
 
-    public func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+    @objc public func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
-        openOnPhone(query)
+        openAddress(query)
         dismissAddressBar()
     }
 
