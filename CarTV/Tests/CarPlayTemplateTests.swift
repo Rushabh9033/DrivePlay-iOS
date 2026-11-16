@@ -177,6 +177,7 @@ final class CarPlayTabTests: XCTestCase {
         func stopScreenShare() { shareStopped = true }
         func openBrowser(url: URL?) {}
         func closeBrowser() {}
+        func pushBrowserAddressBar() {}
     }
 
     private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {

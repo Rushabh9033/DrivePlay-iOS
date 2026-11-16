@@ -34,6 +34,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     private var castTemplate: CPListTemplate?
     private var browserTemplate: CPListTemplate?
     private var searchTemplate: CPSearchTemplate?
+    private var browserSearchDelegate: CarPlayBrowserSearchDelegate?
 
     // MARK: - Scene connection
 
@@ -283,10 +284,99 @@ public final class CarPlaySceneDelegate: UIResponder,
         CarDisplaySession.shared.requestCarScreen()
         CarDisplaySession.shared.open(address: targetURL.absoluteString)
 
-        let closeButton = CPBarButton(title: "Close", handler: { [weak self] _ in
+        guard let controller = interfaceController else {
+            NSLog("DRIVEPLAY CarPlay openBrowser: interfaceController is nil")
+            return
+        }
+
+        var items: [CPListTemplateItem] = []
+
+        // 1. Current URL status
+        let currentItem = CPListItem(
+            text: targetURL.host ?? targetURL.absoluteString,
+            detailText: "Active: \(targetURL.absoluteString)",
+            image: UIImage(systemName: "safari")
+        )
+        items.append(currentItem)
+
+        // 2. Type URL / Search with CarPlay Keyboard
+        let searchKeyboardItem = CPListItem(
+            text: "Type URL or Search...",
+            detailText: "Open CarPlay on-screen keyboard",
+            image: UIImage(systemName: "keyboard")
+        )
+        searchKeyboardItem.accessoryType = .disclosureIndicator
+        searchKeyboardItem.handler = { [weak self] _, completion in
+            self?.pushBrowserAddressBar()
+            completion()
+        }
+        items.append(searchKeyboardItem)
+
+        // 3. Quick Navigation Links
+        let googleItem = CPListItem(text: "Google", detailText: "https://www.google.com", image: UIImage(systemName: "magnifyingglass"))
+        googleItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.google.com"))
+            completion()
+        }
+        items.append(googleItem)
+
+        let ytItem = CPListItem(text: "YouTube", detailText: "https://www.youtube.com", image: UIImage(systemName: "play.rectangle.fill"))
+        ytItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.youtube.com"))
+            completion()
+        }
+        items.append(ytItem)
+
+        let wikiItem = CPListItem(text: "Wikipedia", detailText: "https://www.wikipedia.org", image: UIImage(systemName: "book.fill"))
+        wikiItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.wikipedia.org"))
+            completion()
+        }
+        items.append(wikiItem)
+
+        // 4. Close Browser button
+        let closeItem = CPListItem(
+            text: "Close Browser",
+            detailText: "Return to Home, Favorites and Cast",
+            image: UIImage(systemName: "xmark.circle")
+        )
+        closeItem.handler = { [weak self] _, completion in
+            self?.closeBrowser()
+            completion()
+        }
+        items.append(closeItem)
+
+        let section = CPListSection(items: items, header: "Web Browser: \(targetURL.host ?? "Online")", sectionIndexTitle: nil)
+        let pageTemplate = CPListTemplate(title: targetURL.host ?? "Web Browser", sections: [section])
+
+        let closeBarBtn = CPBarButton(title: "Close", handler: { [weak self] _ in
             self?.closeBrowser()
         })
-        browserTemplate?.leadingNavigationBarButtons = [closeButton]
+        pageTemplate.leadingNavigationBarButtons = [closeBarBtn]
+
+        controller.pushTemplate(pageTemplate, animated: true) { success, error in
+            if !success {
+                NSLog("DRIVEPLAY push browser page template failed: %@", String(describing: error))
+            } else {
+                NSLog("DRIVEPLAY push browser page template succeeded for: %@", targetURL.absoluteString)
+            }
+        }
+    }
+
+    public func pushBrowserAddressBar() {
+        guard let controller = interfaceController else { return }
+        let searchDelegate = browserSearchDelegate ?? CarPlayBrowserSearchDelegate(owner: self)
+        self.browserSearchDelegate = searchDelegate
+        searchDelegate.dismissAddressBar = { [weak self] in
+            self?.popTopTemplate("the browser address bar")
+        }
+        let template = CPSearchTemplate()
+        template.delegate = searchDelegate
+        controller.pushTemplate(template, animated: true) { success, error in
+            if !success {
+                NSLog("DRIVEPLAY push browser address bar failed: %@", String(describing: error))
+            }
+        }
     }
 
     public func closeBrowser() {
@@ -554,5 +644,83 @@ public final class CarPlaySceneDelegate: UIResponder,
             searchRows[searchRowOrder.removeFirst()] = nil
         }
         return item
+    }
+}
+
+final class CarPlayBrowserSearchDelegate: NSObject, CPSearchTemplateDelegate {
+    weak var owner: CarPlaySceneDelegate?
+    var dismissAddressBar: () -> Void = {}
+    private var backRow: CPListItem?
+    private var resultURLs: [ObjectIdentifier: URL] = [:]
+
+    init(owner: CarPlaySceneDelegate?) {
+        self.owner = owner
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        updatedSearchText searchText: String,
+                        completionHandler: @escaping ([CPListItem]) -> Void) {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var items: [CPListItem] = []
+        resultURLs.removeAll()
+
+        let back = backRow ?? CPListItem(text: "Back to Browser", detailText: nil, image: UIImage(systemName: "chevron.backward"))
+        backRow = back
+        items.append(back)
+
+        if !query.isEmpty {
+            let urlString: String
+            let detail: String
+            if query.contains(".") && !query.contains(" ") {
+                urlString = query.hasPrefix("http") ? query : "https://\(query)"
+                detail = "Navigate to \(urlString)"
+            } else {
+                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+                urlString = "https://www.google.com/search?q=\(encoded)"
+                detail = "Search Google for '\(query)'"
+            }
+            if let target = URL(string: urlString) {
+                let goItem = CPListItem(text: query, detailText: detail, image: UIImage(systemName: "arrow.right.circle.fill"))
+                resultURLs[ObjectIdentifier(goItem)] = target
+                items.append(goItem)
+            }
+        }
+
+        let bookmarks: [(String, String, String)] = [
+            ("Google", "Search the web", "https://www.google.com"),
+            ("YouTube", "Watch videos & streams", "https://www.youtube.com"),
+            ("Wikipedia", "The free encyclopedia", "https://www.wikipedia.org"),
+            ("Reddit", "Dive into anything", "https://www.reddit.com")
+        ]
+        for (name, desc, urlStr) in bookmarks {
+            if query.isEmpty || name.localizedCaseInsensitiveContains(query) {
+                if let u = URL(string: urlStr) {
+                    let bItem = CPListItem(text: name, detailText: desc, image: UIImage(systemName: "globe"))
+                    resultURLs[ObjectIdentifier(bItem)] = u
+                    items.append(bItem)
+                }
+            }
+        }
+        completionHandler(items)
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        selectedResult item: CPListItem,
+                        completionHandler: @escaping () -> Void) {
+        if let back = backRow, item === back {
+            dismissAddressBar()
+            completionHandler()
+            return
+        }
+        if let targetURL = resultURLs[ObjectIdentifier(item)] {
+            owner?.openBrowser(url: targetURL)
+        }
+        completionHandler()
+    }
+
+    func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+        if let firstURL = resultURLs.values.first {
+            owner?.openBrowser(url: firstURL)
+        }
     }
 }

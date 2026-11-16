@@ -17,6 +17,7 @@ protocol CarPlayTabActions: AnyObject {
     func stopScreenShare()
     func openBrowser(url: URL?)
     func closeBrowser()
+    func pushBrowserAddressBar()
 }
 
 /// The four tabs the car's screen is built from: Home, Favorites, Cast, and Browser.
@@ -540,7 +541,7 @@ enum CarPlayTemplates {
         )
         searchItem.accessoryType = .disclosureIndicator
         searchItem.handler = { _, completion in
-            owner?.openBrowser(url: URL(string: "https://www.google.com"))
+            owner?.pushBrowserAddressBar()
             completion()
         }
         items.append(searchItem)
