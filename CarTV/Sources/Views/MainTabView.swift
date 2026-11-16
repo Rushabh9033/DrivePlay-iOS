@@ -86,6 +86,9 @@ public struct MainTabView: View {
             if shows { tabBarHeight = Self.tabBarHeightInWindow() }
         }
         .onAppear {
+            NSLog("DRIVEPLAY [MainTabView] onAppear invoked - 5 tabs active")
+            print("DRIVEPLAY [MainTabView] onAppear invoked - 5 tabs active")
+            fflush(stdout)
             // The orientation notification is only posted while the device is
             // generating them. Without this the handler below never runs and
             // the docked player never rotates into full screen.
