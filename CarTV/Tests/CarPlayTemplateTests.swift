@@ -151,6 +151,48 @@ final class CarPlayTemplateTests: XCTestCase {
             "the app has to believe what it was signed with"
         )
     }
+
+    /// AC175: a browser row asks CarPlay for the video surface.
+    ///
+    /// The page on the car is a **picture the app plays** — the app's own web
+    /// view, captured into frames and offered to the car as its video. The
+    /// system draws that picture in the now-playing area, and it only does so
+    /// when the row that was picked asks for video: a browser row without a
+    /// `playbackConfiguration` leaves the car on the list, with nothing to
+    /// draw. The address bar is the exception — it is a text field, not a
+    /// picture.
+    func test_AC175_a_browser_row_asks_for_the_video_surface() {
+        guard #available(iOS 26.4, *) else { return }
+
+        let sections = CarPlayTemplates.browserSections(
+            state: CarBrowserState(address: "https://example.com/watch",
+                                   canGoBack: true,
+                                   canGoForward: false,
+                                   isRunning: true),
+            owner: nil,
+            prefersVideo: true)
+        let rows = sections.flatMap { items(in: $0) }
+
+        let now = rows.first { $0.text == "On the car now" }
+        XCTAssertNotNil(now, "the row that shows the page on the car is missing")
+        XCTAssertEqual(now?.playbackConfiguration?.preferredPresentation, .video)
+        XCTAssertEqual(now?.playbackConfiguration?.playbackAction, .play)
+
+        let site = rows.first { $0.text == "YouTube" }
+        XCTAssertNotNil(site, "the site's row is missing")
+        XCTAssertEqual(site?.playbackConfiguration?.preferredPresentation, .video)
+        XCTAssertEqual(site?.playbackConfiguration?.playbackAction, .play)
+
+        // The address bar is a text field — it asks for nothing.
+        let addressBar = rows.first { $0.text == "Search or type a URL" }
+        XCTAssertNotNil(addressBar)
+        XCTAssertNil(addressBar?.playbackConfiguration)
+
+        // Without the entitlement the rows ask for the now-playing screen.
+        let audio = CarPlayTemplates.browserSections(state: CarBrowserState(), owner: nil, prefersVideo: false)
+        let audioRow = audio.flatMap { items(in: $0) }.first { $0.text == "YouTube" }
+        XCTAssertEqual(audioRow?.playbackConfiguration?.preferredPresentation, .audio)
+    }
 }
 
 /// The car's four tabs and what they show.
@@ -168,6 +210,7 @@ final class CarPlayTabTests: XCTestCase {
         var shareStopped = false
         var addressBarPushed = false
         var opened: [String] = []
+        var commands: [CarBrowserCommand] = []
 
         func play(channel: Channel) { played.append(channel.name) }
         func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
@@ -178,7 +221,8 @@ final class CarPlayTabTests: XCTestCase {
         func startScreenShare() { shareStarted = true }
         func stopScreenShare() { shareStopped = true }
         func pushBrowserAddressBar() { addressBarPushed = true }
-        func openOnPhone(address: String) { opened.append(address) }
+        func openOnCar(address: String) { opened.append(address) }
+        func driveCarBrowser(_ command: CarBrowserCommand) { commands.append(command) }
     }
 
     private func channel(_ name: String, group: String, logo: String? = nil) -> Channel {
@@ -425,12 +469,11 @@ final class CarPlayTabTests: XCTestCase {
     }
 
     /// AC61: the Browser tab offers the sites of the app's own browser — the
-    /// same catalogue the phone shows — and opens them on the phone, because
-    /// CarPlay has no web view of its own.
+    /// same catalogue the phone shows — and opens them **on the car**.
     func test_AC61_the_browser_tab_offers_the_sites_of_the_apps_own_browser() {
         let spy = SpyActions()
 
-        let sections = CarPlayTemplates.browserSections(currentURL: "", owner: spy)
+        let sections = CarPlayTemplates.browserSections(state: CarBrowserState(), owner: spy)
 
         let all = sections.flatMap { items(in: $0) }
         guard let youtube = all.first(where: { $0.text == "YouTube" }) else {
@@ -442,7 +485,7 @@ final class CarPlayTabTests: XCTestCase {
         XCTAssertEqual(BrowserCatalog.videoAndMusic.first?.name, "YouTube")
         XCTAssertTrue(BrowserCatalog.groups.contains { $0.title == "Live & Sports" })
 
-        // A site opens on the phone.
+        // A site opens on the car.
         youtube.handler?(youtube, {})
         XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
     }
@@ -532,19 +575,24 @@ final class CarPlayTabTests: XCTestCase {
     func test_AC101_the_browser_tab_is_a_list_with_the_address_bar_and_the_sites() {
         let spy = SpyActions()
 
-        let sections = CarPlayTemplates.browserSections(currentURL: "https://example.com/watch",
-                                                         owner: spy)
+        let sections = CarPlayTemplates.browserSections(state: CarBrowserState(address: "https://example.com/watch",
+                                                                                isRunning: true),
+                                                        owner: spy)
 
         let top = items(in: sections[0]).map(\.text)
-        XCTAssertEqual(top, ["Search or type a URL", "On the phone now"],
-                       "the Browser tab opens with the address bar and the page the phone shows")
+        XCTAssertEqual(top.first, "Search or type a URL",
+                       "the Browser tab opens with the address bar")
+        XCTAssertTrue(top.contains("On the car now"),
+                      "the Browser tab says which page the car is showing")
+        XCTAssertTrue(top.contains("Back"),
+                      "the car has to be able to drive the page it is showing")
 
         // The address bar is pushed — it is never a tab.
         let addressBar = items(in: sections[0])[0]
         addressBar.handler?(addressBar, {})
         XCTAssertTrue(spy.addressBarPushed, "the address bar was not pushed onto the stack")
 
-        // A site of the app's own browser opens on the phone.
+        // A site of the app's own browser opens on the car.
         let all = sections.flatMap { items(in: $0) }
         guard let youtube = all.first(where: { $0.text == "YouTube" }) else {
             XCTFail("the browser has no YouTube row")
@@ -552,6 +600,81 @@ final class CarPlayTabTests: XCTestCase {
         }
         youtube.handler?(youtube, {})
         XCTAssertEqual(spy.opened, ["https://m.youtube.com"])
+    }
+
+    /// AC168: the car's rows drive the page the car is showing.
+    ///
+    /// The rows of the Browser tab are the car's own controls — Back,
+    /// Forward, Reload, the two scrolls and Close — and they drive the
+    /// browser the picture comes from. A row that only ever asked the phone
+    /// would leave the car looking at a page it cannot move.
+    func test_AC168_the_cars_rows_drive_the_page_the_car_is_showing() {
+        let spy = SpyActions()
+        let state = CarBrowserState(address: "https://example.com/watch",
+                                    canGoBack: true,
+                                    canGoForward: false,
+                                    isRunning: true)
+        let sections = CarPlayTemplates.browserSections(state: state, owner: spy)
+
+        let top = items(in: sections[0])
+        func row(_ text: String) -> CPListItem? {
+            top.first(where: { $0.text == text })
+        }
+        guard let back = row("Back"), let scroll = row("Scroll down") else {
+            XCTFail("the car's browser has no controls")
+            return
+        }
+
+        // A row that cannot do anything is shown as dead — a row that looks
+        // alive and does nothing is worse than no row.
+        XCTAssertTrue(back.isEnabled, "the car's Back row is dead")
+        XCTAssertTrue(scroll.isEnabled, "the car's scroll row is dead")
+        XCTAssertFalse(row("Forward")?.isEnabled ?? true,
+                       "Forward works before there is a page to go forward to")
+
+        back.handler?(back, {})
+        scroll.handler?(scroll, {})
+
+        XCTAssertEqual(spy.commands, [.back, .scrollDown],
+                       "the car's rows do not drive the page the car is showing")
+    }
+
+    /// AC169: the address bar's result opens the page **on the car**.
+    ///
+    /// The car's Browser tab is a list of links and a text field — CarPlay
+    /// has no web template — so what the user typed used to go to the
+    /// **phone**, which is what made the car's browser a remote control for
+    /// the iPhone. The result now opens in the car's own browser: the app's
+    /// web view, drawn into the picture the car plays.
+    func test_AC169_the_address_bars_result_opens_the_page_on_the_car() {
+        // The browser the car gets — its own, so the test does not disturb the
+        // app's own browser.
+        let browser = CarBrowserStream()
+        defer { browser.stop() }
+
+        // The seam the address bar's result goes through, wired to the real
+        // routing and to **this** browser.
+        let original = CarBrowserStream.routeForTheCar
+        CarBrowserStream.routeForTheCar = { address in
+            CarBrowserStream.openForTheCar(address: address, browser: browser)
+        }
+        defer { CarBrowserStream.routeForTheCar = original }
+
+        // The **default** address bar — nothing replaced.
+        let search = CarPlayBrowserSearch()
+
+        var results: [CPListItem] = []
+        search.searchTemplate(CPSearchTemplate(), updatedSearchText: "youtube") { results = $0 }
+        guard let youtube = results.first(where: { $0.text == "YouTube" }) else {
+            XCTFail("the browser has no YouTube row")
+            return
+        }
+
+        search.searchTemplate(CPSearchTemplate(), selectedResult: youtube) {}
+
+        XCTAssertEqual(browser.address, "https://m.youtube.com",
+                       "the address bar's result did not open in the car's own browser")
+        XCTAssertTrue(browser.isRunning, "the page is not on the car's display")
     }
 
     /// AC102: the tab bar is built from **lists** only.

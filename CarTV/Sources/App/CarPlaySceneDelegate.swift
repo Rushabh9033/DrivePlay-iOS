@@ -109,8 +109,9 @@ public final class CarPlaySceneDelegate: UIResponder,
         browserSearchDelegate.dismissAddressBar = { [weak self] in self?.popBrowserAddressBar() }
         let browser = Self.makeTemplate(tab: .browser,
                                         sections: CarPlayTemplates.browserSections(
-                                            currentURL: BrowserTabManager.shared.activeTabURL,
-                                            owner: self))
+                                            state: currentBrowserState(),
+                                            owner: self,
+                                            prefersVideo: Self.isEntitledToVideo))
         NSLog("DRIVEPLAY car screen: scale %.2f, card %.0fx%.0f, row %.0fx%.0f, " +
               "car allows %d items in %d sections; built in %.0f ms",
               CarPlayArtwork.displayScale,
@@ -174,6 +175,9 @@ public final class CarPlaySceneDelegate: UIResponder,
         // Nobody is left to watch the stream.
         ScreenShareService.shared.stop()
         ScreenShareService.shared.stopRelay()
+        // The browser on the car goes with it — the car's screen is the only
+        // place its page was shown.
+        CarBrowserStream.shared.stop()
         interfaceController = nil
         carWindow = nil
         tabBarTemplate = nil
@@ -233,6 +237,19 @@ public final class CarPlaySceneDelegate: UIResponder,
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshCast() }
             .store(in: &cancellables)
+
+        // The browser on the car changes on its own — the page's address, and
+        // whether it is running at all.
+        //
+        // Only **those two** are watched: the Browser tab's list carries a
+        // tile for every site the app knows, and the tab is sent to the car
+        // whole whenever it is rebuilt. A scroll changes neither, so a
+        // scrolling page must not rebuild the tab.
+        CarBrowserStream.shared.$address
+            .combineLatest(CarBrowserStream.shared.$isRunning)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshBrowser() }
+            .store(in: &cancellables)
     }
 
     /// The catalogue and the favourites are one thing: they come from the same
@@ -257,6 +274,22 @@ public final class CarPlaySceneDelegate: UIResponder,
         castTemplate?.updateSections(CarPlayTemplates.castSections(state: currentCastState(),
                                                                   owner: self,
                                                                   prefersVideo: Self.isEntitledToVideo))
+    }
+
+    /// The Browser tab is brought up to date with the browser on the car.
+    private func refreshBrowser() {
+        browserTemplate?.updateSections(CarPlayTemplates.browserSections(state: currentBrowserState(),
+                                                                       owner: self,
+                                                                       prefersVideo: Self.isEntitledToVideo))
+    }
+
+    /// The state of the browser on the car — read from the app, not guessed.
+    private func currentBrowserState() -> CarBrowserState {
+        let browser = CarBrowserStream.shared
+        return CarBrowserState(address: browser.address,
+                               canGoBack: browser.canGoBack,
+                               canGoForward: browser.canGoForward,
+                               isRunning: browser.isRunning)
     }
 
     /// The state the Cast tab shows — read from the app, not guessed.
@@ -383,10 +416,32 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
-    /// A page of the browser opens — on the car's **own** screen when it has
-    /// one, and on the phone otherwise (where the screen share carries it).
-    func openOnPhone(address: String) {
+    /// A page of the browser opens — **on the car**, in the app's own web view,
+    /// drawn into the picture the car plays.
+    ///
+    /// The way a page is routed is the address bar's own, so the Browser tab's
+    /// sites and the address bar's results end up in the same place. The tab
+    /// follows the browser's own state, so it is not rebuilt here.
+    func openOnCar(address: String) {
         browserSearch?.openAddress(address)
+    }
+
+    /// The car drives the page it is showing — a car screen is not a touch
+    /// screen, so the rows are the controls.
+    ///
+    /// The tab is **not** rebuilt here: a scroll changes nothing the tab
+    /// shows, and the tab carries a tile for every site — sending it to the
+    /// car again for every scroll is what took the CarPlay scene down in the
+    /// fifth pass. The tab follows the browser's own state instead.
+    func driveCarBrowser(_ command: CarBrowserCommand) {
+        switch command {
+        case .back: CarBrowserStream.shared.goBack()
+        case .forward: CarBrowserStream.shared.goForward()
+        case .reload: CarBrowserStream.shared.reload()
+        case .scrollUp: CarBrowserStream.shared.scrollUp()
+        case .scrollDown: CarBrowserStream.shared.scrollDown()
+        case .close: CarBrowserStream.shared.close()
+        }
     }
 
     /// The picture moves between the phone and the car.

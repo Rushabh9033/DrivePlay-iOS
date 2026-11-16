@@ -266,6 +266,33 @@ final class PlaybackManagerTests: XCTestCase {
                              "the picture was never offered to the car again")
     }
 
+    /// AC173: the fullscreen player's dismissal does not take the picture
+    /// back from the car.
+    ///
+    /// The fullscreen player is dismissed when the **car** takes the picture,
+    /// and its dismissal calls `exitLandscapeFullscreen()` — which put the
+    /// mode back to the phone's. The phone drew the picture again, the app's
+    /// own output was detached with it, and the car — whose picture depends
+    /// on that output — got a black screen.
+    func test_AC173_the_fullscreen_dismissal_does_not_take_the_picture_back_from_the_car() {
+        let manager = PlaybackManager()
+        let channel = Channel(name: "AC173",
+                              streamURL: URL(string: "https://example.com/ac173.m3u8")!)
+
+        manager.play(channel: channel, presentation: .fullscreen)
+        manager.handOffToCar()
+        manager.systemSaysPictureIsOnCar(true)
+        XCTAssertEqual(manager.presentationMode, .hidden)
+
+        // The fullscreen player's dismissal comes back.
+        manager.exitLandscapeFullscreen()
+
+        XCTAssertEqual(manager.presentationMode, .hidden,
+                       "the phone drew the picture again and the car got no frames")
+        XCTAssertTrue(manager.hasVideoOutput,
+                      "the item waits for an output that never comes")
+    }
+
     /// AC140: the phone's screen share reaches the car's display.
     ///
     /// The share is the only way a **page** reaches the car (CarPlay has no

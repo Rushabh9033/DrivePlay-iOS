@@ -160,6 +160,21 @@ user typed, and a couple of matches; the whole catalogue stays in the Browser
 tab's own list, one tap away (AC163). And a site answers to its **name** as
 well as to its address — "HBO Max" is nowhere in "max.com" (AC164).
 
+The **twentieth pass** (2026-11-05) is the **offline vault on the car's
+display**. The vault's videos were played from a `file://` URL inside the app's
+container, and the car's display is fed by the system's own video target — a
+process that runs **outside** the app's sandbox. The target cannot open a
+sandboxed file, so the item failed with **-11870**
+(`AVErrorExternalPlaybackNotSupportedForAsset`) the moment the car's route
+took the picture, and the video died on the phone **and** on the car. The file
+is now **served over HTTP** and the player is given that URL — the same trick
+the browser's picture uses (AC176). The serving happens in `play(channel:)`,
+the one way in: the vault's own tap, the watch history's "watch again" row and
+the CarPlay rows all go through it, and a file handed to it from anywhere gets
+the same URL. The hand-off's re-offer also had to stop **restarting** the clip:
+re-attaching an item that is already playing resets it to zero, so every offer
+threw the video away (AC172).
+
 ## Acceptance criteria
 
 | AC | Criterion | Test |
@@ -328,6 +343,18 @@ well as to its address — "HBO Max" is nowhere in "max.com" (AC164).
 | 162 | A page the car asks for goes to the car's **own** browser — the Browser tab is not a remote control for the iPhone | `CarPlayTemplateTests` |
 | 163 | The address bar's list stays **short** — the car's keyboard floats over the bottom of the list, and a row under it takes the key presses instead of the keyboard | `CarPlayTemplateTests` |
 | 164 | A site answers to its **name** as well as to its address — "HBO Max" is nowhere in "max.com" | `CarPlayTemplateTests` |
+| 165 | The car's browser can be **captured** as a picture — the page is drawn on the car's display, not on the phone's screen | `CarBrowserStreamTests` |
+| 166 | The picture **follows** the page — the car's own "scroll down" moves the page, and the picture moves with it | `CarBrowserStreamTests` |
+| 167 | The page reaches the car as a **stream** — the app plays the very playlist it serves | `CarBrowserStreamTests` |
+| 168 | The car's rows **drive** the page the car is showing — Back, Forward, Reload, the scrolls and Close | `CarPlayTemplateTests` |
+| 169 | The address bar's result opens the page **on the car**, not on the phone | `CarPlayTemplateTests` |
+| 170 | An **offline vault** video plays — the picture advances | `OfflineVaultPlaybackTests` |
+| 171 | A video that is **on its way to the car** keeps an output of the app's own — the phone's own view is not drawn while the CarPlay scene is in front, and an item with no output never renders | `OfflineVaultPlaybackTests` |
+| 172 | A video the car is **waiting for** keeps playing — the hand-off's re-offers must not restart the clip, or the phone says "Loading Stream…" and the car's display stays black | `OfflineVaultPlaybackTests` |
+| 173 | The fullscreen player's **dismissal** does not take the picture back from the car — the car takes the picture by dismissing the phone's player, and a dismissal that puts the mode back draws the picture on the phone again | `PlaybackManagerTests` |
+| 174 | An offline vault video **reaches the car's display** — the proof is the system's own (the player says it is playing externally), and the car has to be really there | `OfflineVaultPlaybackTests` |
+| 175 | A **browser** row asks the car for the video surface — the page reaches the car as a picture, so the row that opens it has to ask for video, the way a channel row does | `CarPlayTemplateTests` |
+| 176 | The offline vault's video is **served over HTTP** and the **player** is given that URL — a `file://` URL inside the app's container cannot be played by the car's video target (-11870), and the video dies on both screens | `OfflineVaultPlaybackTests` |
 
 ## Verification
 
@@ -357,10 +384,11 @@ changing it.
   displays does. The app therefore offers the picture to the car (the video
   capability is granted, and the car draws the picture in its own now-playing
   area), and falls back to the system's list only when no car is connected.
-- Drawing a **web page** on the car's screen: CarPlay has no web view, and
-  Apple does not allow one. The car's Browser tab is a search bar; the page it
-  opens runs in the app's own browser on the phone, and reaches the car through
-  the phone's screen share.
+- Drawing a web page **into a CarPlay template**: CarPlay has no web template
+  and Apple allows none, so a page can never be a template's content. The page
+  reaches the car's display as the **picture the app plays** — the app's own
+  web view, captured into frames and offered to the car as its video — and the
+  car's own rows drive that web view.
 - Putting anything behind the Pro upgrade: the app ships with every feature
   unlocked. The purchase layer is in place, the product id and the paywall
   placement are still a product decision.

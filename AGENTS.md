@@ -905,10 +905,13 @@ it is set in `project.yml`.
 - **A token in a URL path is the only lock on a LAN-served stream, and 32
   bits is not a lock.** The screen stream is served over the local network
   and every path carries the token, so `String(UUID().uuidString.prefix(8))`
-  — 2³² guesses — was the whole of its privacy. 128 bits, as **one unbroken
-  string of hex** (`UUID().uuidString.replacingOccurrences(of: "-", with: "")`):
-  the token rides in a URL path and in the relay's announcement line, and
-  hex needs no escaping in either.
+  — 2³² guesses — was the whole of its privacy. The token rides in a URL path
+  and in the relay's announcement line, and hex needs no escaping in either.
+  **A v4 UUID is 122 bits of entropy, not 128** — the version and the variant
+  take six of the bits — so a bearer token that matters is better made from
+  the random source directly: 32 bytes of `SecRandomCopyBytes` in hex is 256
+  bits, and the comparison against it is **constant time** (a timing
+  difference says how much of the token was guessed right).
 - **A test that has never run is not a test.** AC150 was written, the AC
   trace said "151 rows ↔ 151 test names, the same set", and the test was
   **wrong** — it asked for a token without dashes while the code produced
@@ -1031,6 +1034,99 @@ it is set in `project.yml`.
   on `CPInterfaceController`, on the scene or in UIKit (iOS 27 SDK), so the
   app cannot read it. The short list is the app's own answer to the same
   problem.
+
+## Gotchas from the nineteenth pass (2026-11-05, the picture of the page)
+
+- **A web view with no window at all still renders.** Measured on the iPhone
+  13: `WKWebView(frame: 1280×720)` that is **never in a window** produced five
+  of five good pictures (`takeSnapshot`), 11–21 ms each, and its layout
+  viewport was **exactly 1280×720** — the car's 16:9. A web view **in a
+  window** loses the safe area and lays out at **1280×639**, so the page is
+  cut off at the bottom. The car wants the window-less one: the page is drawn
+  for the car's screen, not for the phone's.
+- **The picture is three times the view.** `takeSnapshot` returns a
+  **3840×2160 px** image whose `image.size` is 1280×720 **points** (3× the
+  scale). A sampler that mixes the two — `image.size` for the maths and
+  `cgImage` for the pixels — looks at the wrong place entirely: the "centre"
+  of a 1280-point-wide picture is pixel 640, not 1920. That is how a correct
+  page was measured as a black square in the wrong spot.
+- **The encoder's canvas and the web view's layout disagree about which way
+  is up.** The page's layout is top-down; the picture is written through
+  Core Image, which is bottom-up. A marker at the **top** of the page can
+  therefore be at the **bottom** of the picture. A test that looks for a
+  marker has to look for it at both ends — or the marker has to be at the
+  **centre**, where the two agree.
+- **A page the car asks for has to take the player from the phone's share.**
+  `ScreenShareService.tearDown()` calls `PlaybackManager.stopScreenShare()`, so
+  the phone's own screen share has to be stopped **before** the car's browser
+  takes the player — or the share's end would kill the browser's picture.
+
+## Gotchas from the twentieth pass (2026-11-05, the offline vault on the car)
+
+- **`-11870` is `AVErrorExternalPlaybackNotSupportedForAsset`, and it is about
+  the **asset**, not the media stack.** The iOS 27 SDK header says so
+  (`AVError.h`: `AVErrorExternalPlaybackNotSupportedForAsset = -11870`). It
+  fires **the instant** the car's external route goes active
+  (`isExternalPlaybackActive` → true) and it kills the item **permanently**
+  (`status == .failed`) — so the video dies on the phone *and* on the car. The
+  only difference between the vault and the browser was the **URL**: the vault
+  handed the player a `file://` URL inside the app's container, the browser
+  hands it an `http://127.0.0.1:…` URL. The car's display is fed by the
+  system's **own** video target — a process that runs **outside** the app's
+  sandbox — and it cannot open a sandboxed file. A loopback URL is reachable
+  by every process on the phone. **A vault file that goes to the car has to be
+  served over HTTP.**
+- **A number in an old log is not an error.** The two `11870` hits in
+  `build/syslog_diags.log` are `siriknowledged`/Biome noise where "11870"
+  appears inside a UUID — not AVFoundation at all. Read the lines **around**
+  the hit before believing it.
+- **Re-attaching an item that is already playing restarts it.** The player
+  resets the item to zero while it prepares it again, and a seek issued right
+  after the attach is thrown away with it (the status stays `readyToPlay`, so
+  there is no status event to hook). Measured: the playhead jumped to 0.0
+  after **every** offer of the re-offer ladder. The offer brings a **new** item
+  for the same asset, and the new one starts where the old one was — and the
+  **observers belong to the item**, so the new one has to be watched too (or
+  the phone says "Loading Stream…" for ever).
+- **`devicectl copy from` flattens a directory** and `copy to --destination
+  <path>` writes a **file**, while `--remove-existing-content true` on a
+  directory destination replaces a file with the directory. Copy the vault
+  **file by file** when it has to survive a test install.
+- **A device test install can wipe the app's container** — the user's own
+  offline vault lives there. Copy it out before a run and put it back.
+- **`idevicesyslog` dies when the app is reinstalled**, and the app's own
+  `os_log` output does **not** appear in it. Use
+  `xcrun devicectl device process launch --console` for the app's own lines.
+- **The CarPlay scene connects only when DrivePlay is open on the car's
+  screen** — the car opens it, not the app. A scene that never connects is the
+  simulator, not the code.
+- **A phone that is off the USB bus and out of Wi-Fi range is gone:**
+  `devicectl device info lockState` answers *"not able to fulfill the
+  requested usage assertion requirements"* (`CoreDeviceError 4016`) with an
+  **empty** `CurrentlyAssertableStates`, and the phone is not in
+  `xcodebuild -showdestinations`. That is not a code failure — wait for it.
+- **A server that only needs Foundation + Network can be checked without the
+  phone.** Compile the **real** source file for the Mac (`swiftc -o check
+  VaultFileServer.swift main.swift`) and answer it with `URLSession` — the
+  XCTest needs a device, this does not. `scripts/vault_server_check.sh` does
+  exactly that for the vault's file server.
+- **`NWListener(using: .tcp, on: .any)` asks the phone for the local-network
+  permission** and leaves the listener in `.waiting` until the user answers.
+  Bind the **loopback** instead:
+  `parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)`.
+  The car's video target runs on the phone, so it never needs the LAN — and
+  the user's own media has no business on the network.
+- **The serving belongs in `play(channel:)`, not in a method of its own.** The
+  vault's file is served over HTTP so the player's URL is one every process on
+  the phone can fetch — but a **separate** method that only the vault's tap
+  calls leaves the watch history's *"watch again"* row handing `play(channel:)`
+  a `file://` URL, and the video dies on the car the second time it is played.
+  The history's row is a **caller** like every other: fix it once, where all
+  callers route through it.
+- **The vault's token is 256 bits, and it is compared in constant time.** 32
+  bytes from `SecRandomCopyBytes` in hex — a v4 UUID carries 122 bits, not the
+  128 its length suggests. The server binds to the **loopback**, so the token
+  is the only thing between another app on the phone and the user's own media.
 
 ## Measurement traps (both of these caused wrong conclusions here)
 

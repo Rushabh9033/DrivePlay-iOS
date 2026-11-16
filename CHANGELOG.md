@@ -26,6 +26,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **An offline vault video never reached the car's display.**
+  Two faults in one chain. The **fullscreen player's dismissal** — which is
+  how the car takes the picture — put the phone's mode back to the docked
+  player, so the phone started drawing the video again and the app's own
+  output was detached with it; and the app kept **no output of its own**
+  while the picture was on its way to the car, where the phone's own view is
+  not drawn (the CarPlay scene is in front). A video-only `AVPlayerItem`
+  never renders without an output: CoreMedia waits for one that never comes,
+  the playhead never leaves zero, the phone says "Loading Stream…" and the
+  car's display stays black. The app keeps an output of its own for as long
+  as the picture is wanted on the car, and the fullscreen dismissal no longer
+  takes the picture back.
+
+- **The offline vault's video died the moment the car took the picture.**
+  The vault was played from a `file://` URL inside the app's container, and the
+  car's display is fed by the system's **own** video target — a process that
+  runs **outside** the app's sandbox. The target cannot open a sandboxed file,
+  so the item failed with **-11870**
+  (`AVErrorExternalPlaybackNotSupportedForAsset`) the moment the car's route
+  took the picture, and the video died on the phone **and** on the car. The
+  file is now **served over HTTP** and the player is given that URL — the same
+  way the browser's picture reaches the car. The player seeks, so the file is
+  served in ranges. The serving happens in `play(channel:)` — the one way in —
+  so the vault's own tap, the watch history's "watch again" row and the
+  CarPlay rows all get it. The server is bound to the phone's **loopback** and
+  every path carries a **256-bit** token, compared in constant time.
+
+- **The hand-off's re-offers restarted the clip.**
+  The picture is offered to the car again and again (the car's video
+  endpoint appears a couple of minutes after the scene connects), and every
+  offer attaches the item again — which starts the video at the beginning.
+  Putting the position back was not enough: the player resets the item to
+  zero **while** it prepares it again, and the seek that followed was thrown
+  away with it (measured on the phone — the playhead jumped back to 0 after
+  every offer, so the clip played again and again and the phone said
+  "Loading Stream…" the whole time). The offer now brings a **new** item for
+  the same asset, and the new one starts where the old one was. A clip that
+  has ended starts again — the car wants to see the video.
+
+- **A browser row never asked the car for the video surface.**
+  The page reaches the car as a **picture the app plays**, and the system
+  draws that picture in the now-playing area — but only when the row that
+  was picked asks for video. The Browser tab's rows carried no
+  `playbackConfiguration` at all, so the car stayed on the list with nothing
+  to draw. The site's rows and the row that shows the page on the car ask
+  for the video surface now, the way a channel row does.
+
 - **The car's keyboard clicked the row behind it.**
   The address bar's results were the **whole catalogue of sites** — seventeen
   rows with big tiles — so a row was always sitting under the keyboard that
@@ -42,11 +89,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The car's browser was a remote control for the phone.**
   CarPlay has **no web template** — there is none in `CarPlay.framework` at
-  all — so a template browser can never show a page itself. The app's own car
-  screen (the one with a real `WKWebView`) lives in the **external-display**
-  scene, and the app asks the system for it when the CarPlay scene connects.
-  A page the car asks for goes there; where the system refuses the second
-  scene, the old path survives and the page runs on the phone.
+  all — so a template browser can never show a page itself. The Browser tab
+  used to hand every address to the **phone**, which is what made the car's
+  browser nothing but a remote control for the iPhone. The app's own web
+  view now runs the page **for the car**: the page is captured into frames,
+  encoded and served as the very stream the app plays, so the car draws the
+  page on its own display. The car's rows — Back, Forward, Reload, the two
+  scrolls and Close — drive that web view. The app's own car screen (the
+  external-display scene) and the phone's screen share survive as the
+  fallbacks.
 
 - **The video did not start on the car's display.**
   A video the user started **on the phone** was handed off, but a video the

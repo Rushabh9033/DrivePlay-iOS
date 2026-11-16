@@ -2,13 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The **video** category, on its own.
+	     Apple's CarPlay Developer Guide (2026-10-13), page 15: *"Multiple
+	     CarPlay entitlements may not be combined in a single app, unless
+	     specifically noted below."* — the only combination it notes is EV
+	     charging with fueling (page 15, footnote 1). So a build carries
+	     **one** key: this file the video key, `CarTV.audio.entitlements`
+	     the audio key.
+
+	     A build that carried both was refused by the system outright: the
+	     app never registered as a CarPlay app (*"Set Carplay mode to: 0"*,
+	     *"icon launch not enabled"*) and its icon could not be launched.
+
+	     The audio category is the one that fits DrivePlay, and it covers
+	     video as well — page 6: *"Audio apps that also provide video
+	     playback services in CarPlay must support AirPlay video streaming."*
+	     The picture rides that AirPlay route, so this file is the
+	     alternative, not the combination. -->
 	<key>com.apple.developer.carplay-video</key>
-	<true/>
-	<!-- Apple's profile for this app id carries both keys, and Apple's own
-	     guidance ("Rev up your CarPlay app", WWDC26) is to include both when
-	     the content suits both: the app then appears on every car, and the
-	     picture appears on the cars that support "video in car". -->
-	<key>com.apple.developer.carplay-audio</key>
 	<true/>
 </dict>
 </plist>
