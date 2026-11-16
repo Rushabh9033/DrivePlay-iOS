@@ -774,7 +774,7 @@ public final class CarPlayWebViewController: UIViewController,
         webCrashRetries.remove(ObjectIdentifier(webView))
         clearStatus()
         updateToolbar()
-        NSLog("DRIVEPLAY-WEB loaded URL=%@", webView.url?.absoluteString ?? "-")
+        NSLog("DRIVEPLAY-WEB loaded URL=%@", webView.url.map { CredentialRedactor.safeForLog($0) } ?? "-")
     }
 
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
