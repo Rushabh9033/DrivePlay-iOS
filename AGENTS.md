@@ -112,6 +112,20 @@ it is set in `project.yml`.
   `layer.zPosition = 99999`, or keeps it on top with a repeating timer) is fighting the
   framework — the view never renders. `InCarAutomotiveController` is a plain `UIViewController`
   and is legitimate **only** for `ExternalDisplaySceneDelegate` (a normal `UIWindowScene`).
+- **`CPWindow.addSubview` does not composite over CarPlay templates.** In `CPTemplateApplicationScene`,
+  CarPlay templates are hosted out-of-process by Apple's `CarPlayTemplateUIHost`. Attempting to add
+  subviews to `carWindow` (`CPWindow`) with `layer.zPosition = 999999` is ignored by the compositor
+  and receives no touch events. Never use view overlays in `CarPlaySceneDelegate`. Use native CarPlay
+  templates (`CPListTemplate`, `CPSearchTemplate`) and the system video presentation surface
+  (`CPPlaybackConfiguration(preferredPresentation: .video)`).
+- **`searchTemplateSearchButtonPressed` must be marked `@objc`.** In `CPSearchTemplateDelegate`,
+  `searchTemplateSearchButtonPressed:` is an `@optional` Objective-C protocol method. If the Swift
+  implementation lacks `@objc` dynamic dispatch, `-[CPSearchTemplateDelegate respondsToSelector:]`
+  returns `NO`, leaving the keyboard's on-screen Search/Return button disabled.
+- **CarPlay interactions must never hijack handset tabs.** Setting `AppTabSelection.shared.tab = .browser`
+  from car interactions forces the iPhone screen to switch tabs unexpectedly. CarPlay and the iPhone
+  handset must maintain 100% independent presentation states. External and car navigation must never
+  mutate `BrowserTabManager.shared.loadURLInActiveTab`.
 - **`CPListSection` has two initialisers and only one of them takes a `nil`
   header.** The plain one (`init(items:header:sectionIndexTitle:)`) has a
   *nullable* header; the enhanced one
