@@ -17,6 +17,4 @@ scratch/
 # Agent workflow state and archives — not app source.
 cartv-m3u-iptv-player-cast/
 REA_workflow_Rushabh.zip
-
-# the user's own backup of the playlist and the vault — never commit it
-backup_user_docs/
+build_device/

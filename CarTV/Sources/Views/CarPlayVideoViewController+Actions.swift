@@ -187,44 +187,18 @@ extension InCarAutomotiveController {
     }
     
     public func openBrowserHome() {
-        self.view.isHidden = false
-        self.browserContainer.isHidden = false
-        if let win = self.view.window {
-            win.bringSubviewToFront(self.view)
-        } else if let sup = self.view.superview {
-            sup.bringSubviewToFront(self.view)
+        if isInteractive {
+            presentRealWebBrowser()
+            return
         }
-        self.view.bringSubviewToFront(browserContainer)
-        // The page stops with the catalogue — see `handleBrowserHome`.
-        self.webView?.stopLoading()
-        self.browserHomeScrollView.isHidden = false
-        self.webView?.isHidden = true
-        self.browserUrlLabel.text = "Enter a URL or search"
-        self.browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
-        self.browserBackBtn.tintColor = UIColor(white: 0.70, alpha: 1.0)
+        videoContainer.isHidden = true
+        playerVC.player?.pause()
+        mirrorContainer.isHidden = true
+        if isMirroringActive {
+            handleMirrorClose()
+        }
+        searchOverlay.isHidden = true
         
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        self.browserContainer.frame = self.view.bounds
-        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
-        self.browserToolbar.frame = CGRect(x: 0, y: 0, width: self.view.bounds.width, height: barH)
-        self.browserHomeScrollView.frame = CGRect(x: 0, y: barH, width: self.view.bounds.width, height: self.view.bounds.height - barH)
-        CATransaction.commit()
-        
-        self.view.setNeedsLayout()
-        self.view.layoutIfNeeded()
-    }
-    
-    /// Opens a page in the car's **own** browser.
-    ///
-    /// This is the browser that runs on the car's display: the browser tab
-    /// first — it brings the browser's own chrome up — and then the page.
-    public func open(address: URL) {
-        switchTab(.browser)
-        openBrowser(url: address)
-    }
-
-    public func openBrowser(url: URL) {
         self.view.isHidden = false
         self.browserContainer.isHidden = false
         if let win = self.view.window {
@@ -234,13 +208,72 @@ extension InCarAutomotiveController {
         }
         self.view.bringSubviewToFront(browserContainer)
         self.browserHomeScrollView.isHidden = true
-        self.browserUrlLabel.text = url.host ?? url.absoluteString
+        self.webView?.isHidden = false
+        
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.browserContainer.frame = self.view.bounds
+        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
+        self.browserToolbar.frame = CGRect(x: 0, y: 0, width: self.view.bounds.width, height: barH)
+        self.webView?.frame = CGRect(x: 0, y: barH, width: self.view.bounds.width, height: self.view.bounds.height - barH)
+        CATransaction.commit()
+        
+        if let url = URL(string: "https://www.google.com") {
+            openBrowser(url: url)
+        }
+        
+        self.view.setNeedsLayout()
+        self.view.layoutIfNeeded()
+    }
+    
+    public func openBrowser(url: URL) {
+        if isInteractive {
+            presentRealWebBrowser(url: url)
+            return
+        }
+        videoContainer.isHidden = true
+        playerVC.player?.pause()
+        mirrorContainer.isHidden = true
+        if isMirroringActive {
+            handleMirrorClose()
+        }
+        searchOverlay.isHidden = true
+        
+        self.view.isHidden = false
+        self.browserContainer.isHidden = false
+        
+        var b = view.bounds
+        if (b.width <= 0 || b.height <= 0), let win = view.window ?? view.superview?.window {
+            b = win.bounds
+            view.frame = b
+        }
+        if b.width <= 0 || b.height <= 0 {
+            b = CGRect(x: 0, y: 0, width: 800, height: 480)
+            view.frame = b
+        }
+        
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.browserContainer.frame = b
+        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
+        self.browserToolbar.frame = CGRect(x: 0, y: 0, width: b.width, height: barH)
+        self.browserHomeScrollView.frame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        let webFrame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
+        CATransaction.commit()
+        
+        if let win = self.view.window {
+            win.bringSubviewToFront(self.view)
+        } else if let sup = self.view.superview {
+            sup.bringSubviewToFront(self.view)
+        }
+        self.view.bringSubviewToFront(browserContainer)
+        self.browserHomeScrollView.isHidden = true
+        let hostOrString = url.host ?? url.absoluteString
+        self.browserUrlLabel.text = hostOrString
+        self.browserUrlTextField.text = hostOrString
+        self.browserUrlTextField.resignFirstResponder()
         self.browserUrlLabel.textColor = UIColor(white: 0.15, alpha: 1.0)
         self.browserBackBtn.tintColor = UIColor(white: 0.15, alpha: 1.0)
-        
-        let barH: CGFloat = browserToolbar.isHidden ? 0 : 44
-        let b = view.bounds
-        let webFrame = CGRect(x: 0, y: barH, width: b.width, height: b.height - barH)
         
         if self.webView == nil {
             let config = WKWebViewConfiguration()
@@ -257,28 +290,37 @@ extension InCarAutomotiveController {
         }
         
         if let wv = self.webView {
-            browserContainer.bringSubviewToFront(wv)
             wv.isHidden = false
             wv.load(URLRequest(url: url))
         }
+        browserContainer.bringSubviewToFront(browserToolbar)
+        browserContainer.bringSubviewToFront(browserScrollUpBtn)
+        browserContainer.bringSubviewToFront(browserScrollDownBtn)
+        browserContainer.bringSubviewToFront(floatingKeyboard)
+        
+        self.view.setNeedsLayout()
+        self.view.layoutIfNeeded()
     }
     
     @objc public func handleBrowserHome() {
-        // The house button means "back to the catalogue" — the page has to
-        // stop, not just be hidden: a page that keeps loading (or playing)
-        // behind the catalogue burns the battery and the mobile data.
-        self.webView?.stopLoading()
-        self.browserHomeScrollView.isHidden = false
-        self.webView?.isHidden = true
-        self.browserUrlLabel.text = "Enter a URL or search"
-        self.browserUrlLabel.textColor = UIColor(white: 0.55, alpha: 1.0)
-        self.browserBackBtn.tintColor = UIColor(white: 0.70, alpha: 1.0)
+        self.browserHomeScrollView.isHidden = true
+        self.webView?.isHidden = false
+        if let url = URL(string: "https://www.google.com") {
+            openBrowser(url: url)
+        }
+        hideFloatingKeyboard()
     }
     
     @objc public func handleBrowserClose() {
+        self.webView?.stopLoading()
         self.browserContainer.isHidden = true
-        switchTab(.home)
-        self.onCloseBrowser?()
+        self.browserUrlTextField.resignFirstResponder()
+        hideFloatingKeyboard()
+        if let onClose = self.onCloseBrowser {
+            onClose()
+        } else {
+            openCockpitHome()
+        }
     }
     
     @objc func handleBrowserBack() {
@@ -296,17 +338,29 @@ extension InCarAutomotiveController {
     }
     
     @objc func handleAddressBarTap() {
-        let alert = UIAlertController(title: "Browse Web", message: "Enter a website URL or search query", preferredStyle: .alert)
-        alert.addTextField { tf in
-            tf.placeholder = "https:// or search term"
-            tf.keyboardType = .URL
-            tf.autocapitalizationType = .none
+        toggleFloatingKeyboard()
+    }
+
+    @objc func handleKeyboardToggle() {
+        toggleFloatingKeyboard()
+    }
+
+    public func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        if textField === browserUrlTextField {
+            showFloatingKeyboard()
+            return false
         }
-        alert.addAction(UIAlertAction(title: "Go", style: .default) { [weak self, weak alert] _ in
-            // The alert is captured weakly: a strong capture would keep the
-            // alert alive through its own action — the alert holds the action,
-            // the action holds the alert.
-            guard let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        return true
+    }
+
+    @objc func handleBrowserMore() {
+        handleToggleFullscreen()
+    }
+
+    public func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        if textField === browserUrlTextField {
+            guard let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return true }
             let finalUrl: URL
             if text.hasPrefix("http://") || text.hasPrefix("https://") {
                 finalUrl = URL(string: text) ?? URL(string: "https://www.google.com")!
@@ -316,10 +370,13 @@ extension InCarAutomotiveController {
                 let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                 finalUrl = URL(string: "https://www.google.com/search?q=\(q)")!
             }
-            self?.openBrowser(url: finalUrl)
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
-        present(alert, animated: true)
+            openBrowser(url: finalUrl)
+            return true
+        } else if textField === searchBarField {
+            textField.resignFirstResponder()
+            return true
+        }
+        return true
     }
 
     /// Puts the page on the car's display.

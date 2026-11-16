@@ -1,9 +1,5 @@
 import UIKit
 
-/// No `@objc(Name)` here either: the manifest asks for
-/// "CarTV.ExternalDisplaySceneDelegate", and an `@objc(Name)` attribute would give
-/// the class the runtime name "ExternalDisplaySceneDelegate" — without the module
-/// prefix — so the manifest's name would not resolve (see AC177).
 public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     public var window: UIWindow?
     /// The controller shown on the external display. Its screen capture has to be
@@ -18,16 +14,19 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let externalWindow = UIWindow(windowScene: windowScene)
-        let controller = InCarAutomotiveController()
+        let isInteractive: Bool
+        if #available(iOS 16.0, *) {
+            isInteractive = (session.role != .windowExternalDisplayNonInteractive)
+        } else {
+            isInteractive = true
+        }
+
+        let controller = InCarAutomotiveController(isInteractive: isInteractive)
         externalWindow.rootViewController = controller
         externalWindow.isHidden = false
         externalWindow.makeKeyAndVisible()
         self.window = externalWindow
         self.controller = controller
-        // The car's own screen is up: the browser that runs **on the car**
-        // lives here, and the template scene's Browser tab now has somewhere
-        // to put a page.
-        CarDisplaySession.shared.attach(controller)
     }
 
     public func sceneDidDisconnect(_ scene: UIScene) {
@@ -40,9 +39,6 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
     /// indicator on and drains the battery.
     func teardown() {
         controller?.stopMirroring()
-        if let controller {
-            CarDisplaySession.shared.detach(controller)
-        }
         controller = nil
         window = nil
     }

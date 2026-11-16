@@ -15,72 +15,12 @@ protocol CarPlayTabActions: AnyObject {
     func togglePlayback()
     func startScreenShare()
     func stopScreenShare()
-    /// The car's address bar — pushed onto the stack, never a tab.
+    func openBrowser(url: URL?)
+    func closeBrowser()
     func pushBrowserAddressBar()
-    /// A page of the browser opens — **on the car**, in the app's own web view.
-    func openOnCar(address: String)
-    /// The car drives the browser it is showing.
-    func driveCarBrowser(_ command: CarBrowserCommand)
 }
 
-/// What the car's rows can ask the browser on the car to do.
-///
-/// The page on the car is the app's own web view, so the car has to be able
-/// to drive it — there is no touch screen on a car screen.
-enum CarBrowserCommand: String, CaseIterable {
-    case back
-    case forward
-    case reload
-    case scrollUp
-    case scrollDown
-    case close
-
-    /// What the row says.
-    var title: String {
-        switch self {
-        case .back: return "Back"
-        case .forward: return "Forward"
-        case .reload: return "Reload"
-        case .scrollUp: return "Scroll up"
-        case .scrollDown: return "Scroll down"
-        case .close: return "Close the page"
-        }
-    }
-
-    /// The row's own icon.
-    var symbol: String {
-        switch self {
-        case .back: return "chevron.backward"
-        case .forward: return "chevron.forward"
-        case .reload: return "arrow.clockwise"
-        case .scrollUp: return "chevron.up"
-        case .scrollDown: return "chevron.down"
-        case .close: return "xmark.circle"
-        }
-    }
-
-    /// Whether the row can do anything at all — a row that looks alive and
-    /// does nothing is worse than no row.
-    func isAvailable(_ state: CarBrowserState) -> Bool {
-        switch self {
-        case .back: return state.canGoBack
-        case .forward: return state.canGoForward
-        case .reload, .scrollUp, .scrollDown, .close: return state.isRunning
-        }
-    }
-}
-
-/// What the browser on the car is doing — the real state, not a promise.
-struct CarBrowserState {
-    /// The address the car is showing.
-    var address: String = ""
-    var canGoBack = false
-    var canGoForward = false
-    /// True while the picture is on its way to the car.
-    var isRunning = false
-}
-
-/// The four tabs the car's screen is built from.
+/// The four tabs the car's screen is built from: Home, Favorites, Cast, and Browser.
 enum CarPlayTab: String, CaseIterable {
     case home = "Home"
     case favorites = "Favorites"
@@ -99,7 +39,7 @@ enum CarPlayTab: String, CaseIterable {
         case .home: return "house.fill"
         case .favorites: return "heart.fill"
         case .cast: return "airplayvideo"
-        case .browser: return "safari.fill"
+        case .browser: return "globe"
         }
     }
 }
@@ -403,95 +343,6 @@ enum CarPlayTemplates {
         }
     }
 
-    // MARK: - Browser
-
-    /// The Browser tab: the way into the address bar, the page the car is
-    /// showing now, the controls of that page, and the app's own sites.
-    ///
-    /// The tab itself is a **list**. A `CPSearchTemplate` is the only CarPlay
-    /// chrome with a text field, but the tab bar **rejects** one —
-    /// `-validateTemplates:` raises an `NSException` and the app dies at every
-    /// scene connect — so the address bar is pushed onto the stack instead.
-    ///
-    /// The page on the car is the **app's own web view**, drawn into the
-    /// stream the car plays — so the car drives it with rows, and the tab is
-    /// no longer a remote control for the phone.
-    static func browserSections(state: CarBrowserState,
-                                owner: CarPlayTabActions?,
-                                prefersVideo: Bool = CarPlaySceneDelegate.isEntitledToVideo) -> [CPListSection] {
-        var top: [CPListItem] = []
-
-        let addressBar = CPListItem(text: "Search or type a URL",
-                                    detailText: "The car's address bar",
-                                    image: UIImage(systemName: "magnifyingglass"))
-        addressBar.accessoryType = .disclosureIndicator
-        addressBar.handler = { _, completion in
-            owner?.pushBrowserAddressBar()
-            completion()
-        }
-        top.append(addressBar)
-
-        if !state.address.isEmpty {
-            let now = CPListItem(text: "On the car now",
-                                 detailText: state.address,
-                                 image: UIImage(systemName: "safari.fill"))
-            // The page on the car is a **picture the app plays** — so the row
-            // asks the system for the video surface, the same way a channel
-            // row does. Without it the car stays on the list and the page is
-            // never drawn.
-            if #available(iOS 26.4, *) {
-                now.playbackConfiguration = CarPlaySceneDelegate.playbackConfiguration(prefersVideo: prefersVideo)
-            }
-            now.handler = { _, completion in
-                owner?.openOnCar(address: state.address)
-                completion()
-            }
-            top.append(now)
-        }
-
-        // The controls of the page the car is showing.
-        //
-        // They are there **only while there is a page**: a row that cannot do
-        // anything is worse than no row, and the car's screen has room for
-        // the sites.
-        if state.isRunning {
-            let controls = CarBrowserCommand.allCases.map { command -> CPListItem in
-                let item = CPListItem(text: command.title,
-                                      detailText: nil,
-                                      image: UIImage(systemName: command.symbol))
-                item.isEnabled = command.isAvailable(state)
-                item.handler = { _, completion in
-                    owner?.driveCarBrowser(command)
-                    completion()
-                }
-                return item
-            }
-            top.append(contentsOf: controls)
-        }
-
-        var sections = [CPListSection(items: top, header: "Browser", sectionIndexTitle: nil)]
-
-        for group in BrowserCatalog.groups {
-            let rows = group.items.map { site -> CPListItem in
-                let item = CPListItem(text: site.name,
-                                      detailText: site.urlString,
-                                      image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize))
-                // A site opens a **page**, and the page reaches the car as a
-                // picture — so the row asks for the video surface too.
-                if #available(iOS 26.4, *) {
-                    item.playbackConfiguration = CarPlaySceneDelegate.playbackConfiguration(prefersVideo: prefersVideo)
-                }
-                item.handler = { _, completion in
-                    owner?.openOnCar(address: site.urlString)
-                    completion()
-                }
-                return item
-            }
-            sections.append(CPListSection(items: rows, header: group.title, sectionIndexTitle: nil))
-        }
-        return sections
-    }
-
     // MARK: - Rows
 
 
@@ -664,6 +515,51 @@ enum CarPlayTemplates {
         let section = CPListSection(items: items, header: nil, sectionIndexTitle: nil)
         return CPListTemplate(title: title, sections: [section])
     }
+
+    // MARK: - Browser
+
+    /// The dedicated browser section on CarPlay.
+    static func browserSections(owner: CarPlayTabActions?) -> [CPListSection] {
+        var items: [CPListTemplateItem] = []
+
+        let openBrowserItem = CPListItem(
+            text: "Launch Web Browser",
+            detailText: "https://example.com — Full car-screen web experience",
+            image: UIImage(systemName: "safari")
+        )
+        openBrowserItem.accessoryType = .disclosureIndicator
+        openBrowserItem.handler = { _, completion in
+            owner?.openBrowser(url: URL(string: "https://example.com"))
+            completion()
+        }
+        items.append(openBrowserItem)
+
+        let searchItem = CPListItem(
+            text: "Search the Web",
+            detailText: "Search Google directly with car keyboard",
+            image: UIImage(systemName: "magnifyingglass")
+        )
+        searchItem.accessoryType = .disclosureIndicator
+        searchItem.handler = { _, completion in
+            owner?.pushBrowserAddressBar()
+            completion()
+        }
+        items.append(searchItem)
+
+        let closeItem = CPListItem(
+            text: "Close Browser",
+            detailText: "Return to Home, Favorites and Cast",
+            image: UIImage(systemName: "xmark.circle")
+        )
+        closeItem.handler = { _, completion in
+            owner?.closeBrowser()
+            completion()
+        }
+        items.append(closeItem)
+
+        let section = CPListSection(items: items, header: "CarPlay Web Browser", sectionIndexTitle: nil)
+        return [section]
+    }
 }
 
 /// The car's rows, patched in batches.
@@ -711,177 +607,5 @@ final class CarPlayCardPatcher {
         guard !patches.isEmpty else { return }
         batchCount += 1
         for patch in patches { patch() }
-    }
-}
-
-/// The car's address bar.
-///
-/// CarPlay has no web view of its own — Apple does not allow one — so the
-/// browser on the car is a **search template**: the search field in its header
-/// is the address bar, and what the user types is opened in the app's browser
-/// **on the phone**, where the app's screen share carries it to the car (or on
-/// the car's own screen, when the app has one).
-///
-/// The address bar is **pushed onto the stack**, never a tab: the tab bar
-/// rejects a search template and the exception takes the app down.
-///
-/// The **keyboard is the car's own** — `CPSearchTemplate` has no keyboard of
-/// its own — and it floats over the bottom of the list. So the list here is
-/// **short**: the way back, what the user typed, and a couple of matches. The
-/// whole catalogue is in the Browser tab's own list, one tap away.
-///
-/// The rules are the phone browser's own: a text that is a URL is a URL,
-/// anything else is a search.
-@MainActor
-final class CarPlayBrowserSearch: NSObject, CPSearchTemplateDelegate {
-
-    /// A row of the browser and the address it stands for.
-    struct Row {
-        let item: CPListItem
-        let address: String
-    }
-
-    /// The text the user typed — the search template does not keep it.
-    private var searchText: String = ""
-
-    /// What a picked row does — the tests replace it, so nothing is loaded.
-    var openAddress: (String) -> Void = { address in
-        // The page runs **on the car**: the app's own web view, drawn into the
-        // picture the car plays. The phone's browser and the screen share are
-        // the last resort — they need the user to start a share.
-        _ = CarBrowserStream.routeForTheCar(address)
-    }
-
-    /// Called after a result was picked — the car goes back to the list, the
-    /// page is on the phone now.
-    var dismissAddressBar: () -> Void = {}
-
-    /// The address each result stands for.
-    ///
-    /// A search result is **not** a list row: the selection comes back
-    /// through `searchTemplate(_:selectedResult:completionHandler:)` and the
-    /// row's own handler is never called — so the app has to know what the
-    /// result was.
-    private var results: [ObjectIdentifier: String] = [:]
-
-    /// The row that takes the user back to the browser's list.
-    ///
-    /// A `CPSearchTemplate` cannot carry a navigation bar button — it does
-    /// not conform to `CPBarButtonProviding` — so the way back is a row of
-    /// the search's own list.
-    private var backRow: CPListItem?
-
-    /// The most rows the address bar offers at once.
-    ///
-    /// The car's **keyboard floats over the bottom of the list**, and a row
-    /// that sits under it takes the key presses instead of the keyboard — the
-    /// user's *"the keyboard clicks the row behind it"*. Four rows fit above
-    /// it: the way back, what the user typed, and two matches.
-    static let maximumRows = 4
-
-    /// The rows of the app's own sites — built **once**.
-    ///
-    /// The search template hands the car a fresh list on **every keystroke**,
-    /// and every row carries a picture at the car's scale, so building them
-    /// again for every character is what took the CarPlay scene down. The rows
-    /// are built once and only filtered afterwards.
-    private static let siteRows: [Row] = {
-        var rows: [Row] = []
-        for group in BrowserCatalog.groups {
-            for site in group.items {
-                rows.append(Row(item: CPListItem(text: site.name,
-                                                  detailText: site.urlString,
-                                                  image: CarPlayArtwork.shared.siteTile(for: site, size: CarPlayArtwork.rowSize)),
-                                 address: site.urlString))
-            }
-        }
-        return rows
-    }()
-
-    /// Whether a site answers to what the user typed.
-    ///
-    /// By its **name** as well as by its address — "HBO Max" is nowhere in
-    /// "hbo.max.com", and the name is what the user reads on the row.
-    private static func matches(_ row: Row, _ query: String) -> Bool {
-        if row.address.localizedCaseInsensitiveContains(query) { return true }
-        guard let name = row.item.text else { return false }
-        return name.localizedCaseInsensitiveContains(query)
-    }
-
-    public func searchTemplate(_ searchTemplate: CPSearchTemplate,
-                               updatedSearchText searchText: String,
-                               completionHandler: @escaping ([CPListItem]) -> Void) {
-        self.searchText = searchText
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        var offered: [Row] = []
-        // The way back — the first row, **always**: a search the user cannot
-        // get out of is a dead end, and typing must not take the way out
-        // away.
-        let back = backRow ?? CPListItem(text: "Back to sites",
-                                          detailText: nil,
-                                          image: UIImage(systemName: "chevron.backward"))
-        backRow = back
-        offered.append(Row(item: back, address: ""))
-        // What the user typed is the next row: it opens the text the way the
-        // phone's browser does — a URL is a URL, anything else is a search.
-        if !query.isEmpty {
-            offered.append(Row(item: CPListItem(text: "Open \"\(query)\"",
-                                                 detailText: query,
-                                                 image: UIImage(systemName: "magnifyingglass")),
-                               address: query))
-        }
-        // The sites that match — and only a couple of them. The whole
-        // catalogue is in the Browser tab's own list, one tap away, and the
-        // list here has to stay **clear of the car's keyboard**: a row under
-        // it takes the key presses instead of the keyboard.
-        if !query.isEmpty {
-            for row in Self.siteRows {
-                guard offered.count < Self.maximumRows else { break }
-                guard Self.matches(row, query) else { continue }
-                offered.append(row)
-            }
-        }
-
-        results = [:]
-        for row in offered {
-            // The way back is not an address — it stands for the list.
-            if let back = backRow, row.item === back { continue }
-            results[ObjectIdentifier(row.item)] = row.address
-        }
-        completionHandler(offered.map(\.item))
-    }
-
-    public func searchTemplate(_ searchTemplate: CPSearchTemplate,
-                               selectedResult item: CPListItem,
-                               completionHandler: @escaping () -> Void) {
-        if let back = backRow, item === back {
-            completionHandler()
-            dismissAddressBar()
-            return
-        }
-        if let address = results[ObjectIdentifier(item)] {
-            openOnCar(address)
-        } else {
-            NSLog("DRIVEPLAY the selected browser result stands for no address")
-        }
-        completionHandler()
-        dismissAddressBar()
-    }
-
-    public func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-        openOnCar(query)
-        dismissAddressBar()
-    }
-
-    /// Opens the address **on the car**.
-    ///
-    /// The car cannot draw a page of its own, so the page reaches it through
-    /// the app's own web view and the picture the car plays.
-    private func openOnCar(_ address: String) {
-        guard !address.isEmpty else { return }
-        openAddress(address)
     }
 }

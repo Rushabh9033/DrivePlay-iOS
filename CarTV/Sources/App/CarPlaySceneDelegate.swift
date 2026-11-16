@@ -16,20 +16,13 @@ import Combine
 ///
 /// This delegate must never touch `CPWindow.rootViewController` — CarPlay owns that
 /// window and its template stack.
-///
-/// The class carries **no** `@objc(Name)`: the attribute gives the class the runtime
-/// name "CarPlaySceneDelegate" — without the module prefix — while the manifest
-/// asks for "CarTV.CarPlaySceneDelegate". `NSClassFromString` then answers nil,
-/// a scene created from the manifest gets **no delegate**, and CarPlay raises an
-/// NSException in `_deliverInterfaceControllerToDelegate`: SIGABRT, the app dies,
-/// and the phone's screen is black. The manifest's name and the class's runtime
-/// name have to agree (see AC177).
 public final class CarPlaySceneDelegate: UIResponder,
     CPTemplateApplicationSceneDelegate,
     CPTabBarTemplateDelegate,
     CPSearchTemplateDelegate,
     CarPlayTabActions {
 
+    public static private(set) var shared: CarPlaySceneDelegate?
     private var interfaceController: CPInterfaceController?
     public var carWindow: CPWindow?
     private var cancellables = Set<AnyCancellable>()
@@ -40,14 +33,7 @@ public final class CarPlaySceneDelegate: UIResponder,
     private var castTemplate: CPListTemplate?
     private var browserTemplate: CPListTemplate?
     private var searchTemplate: CPSearchTemplate?
-    /// The Browser tab's own delegate — the search field in the **pushed**
-    /// address bar is the car's address bar.
-    private var browserSearch: CarPlayBrowserSearch?
-    /// The car's address bar — the only CarPlay chrome with a text field.
-    ///
-    /// It is **pushed** onto the stack: the tab bar rejects a search template
-    /// (`-validateTemplates:` raises an `NSException` and the app dies).
-    private var browserAddressBar: CPSearchTemplate?
+    private var browserSearchDelegate: CarPlayBrowserSearchDelegate?
 
     // MARK: - Scene connection
 
@@ -63,7 +49,8 @@ public final class CarPlaySceneDelegate: UIResponder,
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
-        connect(interfaceController: interfaceController, window: templateApplicationScene.carWindow)
+        let win = templateApplicationScene.carWindow
+        connect(interfaceController: interfaceController, window: win)
     }
 
     public func templateApplicationScene(
@@ -83,16 +70,10 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     private func connect(interfaceController: CPInterfaceController, window: CPWindow?) {
         NSLog("DRIVEPLAY CarPlay scene connected")
-        carDisplayLog.notice("the CarPlay scene is connected")
+        Self.shared = self
         self.interfaceController = interfaceController
         self.carWindow = window
         window?.overrideUserInterfaceStyle = .dark
-
-        // The car is here — ask for the **experimental vehicle window**, the
-        // one mechanism that could put a real WKWebView on the car's display
-        // (the documented CarPlay API has no web template at all). The probe
-        // logs what the system answers.
-        CarPlayWindowProbe.requestVehicleWindow()
 
         // The artwork has to be drawn for the **car's** screen — its scale is
         // not the phone's.
@@ -113,18 +94,12 @@ public final class CarPlaySceneDelegate: UIResponder,
                                      sections: CarPlayTemplates.castSections(state: currentCastState(),
                                                                            owner: self,
                                                                            prefersVideo: Self.isEntitledToVideo))
+        let browser = Self.makeTemplate(tab: .browser,
+                                        sections: CarPlayTemplates.browserSections(owner: self))
         // The Browser tab is a **list**: the way into the address bar, the page
         // the phone shows now and the app's own sites. The address bar itself
         // is a search template, and the tab bar rejects one — so it is pushed
         // onto the stack instead.
-        let browserSearchDelegate = browserSearch ?? CarPlayBrowserSearch()
-        browserSearch = browserSearchDelegate
-        browserSearchDelegate.dismissAddressBar = { [weak self] in self?.popBrowserAddressBar() }
-        let browser = Self.makeTemplate(tab: .browser,
-                                        sections: CarPlayTemplates.browserSections(
-                                            state: currentBrowserState(),
-                                            owner: self,
-                                            prefersVideo: Self.isEntitledToVideo))
         NSLog("DRIVEPLAY car screen: scale %.2f, card %.0fx%.0f, row %.0fx%.0f, " +
               "car allows %d items in %d sections; built in %.0f ms",
               CarPlayArtwork.displayScale,
@@ -136,6 +111,11 @@ public final class CarPlaySceneDelegate: UIResponder,
         home.leadingNavigationBarButtons = [
             CPBarButton(title: "Search", handler: { [weak self] _ in self?.pushChannelSearch() })
         ]
+        if let magImage = UIImage(systemName: "magnifyingglass") {
+            home.trailingNavigationBarButtons = [
+                CPBarButton(image: magImage, handler: { [weak self] _ in self?.pushChannelSearch() })
+            ]
+        }
         home.emptyViewTitleVariants = ["No channels"]
         home.emptyViewSubtitleVariants = ["Add a playlist source in the DrivePlay app"]
         favorites.emptyViewTitleVariants = ["No favorites yet"]
@@ -163,12 +143,6 @@ public final class CarPlaySceneDelegate: UIResponder,
         // nothing left to pick.
         PlaybackManager.shared.isCarConnected = true
 
-        // The car's **own** screen: the app's car UI with a real browser and a
-        // video surface. The template scene cannot show a page (there is no
-        // web template in CarPlay), so without this the Browser tab is only a
-        // remote control for the phone.
-        CarDisplaySession.shared.requestCarScreen()
-
         // A picture that is **already on the car's display** stays there: the
         // phone stops drawing it, so it is not shown twice. A picture that is
         // still on the phone stays on the phone — it moves when the user says
@@ -180,6 +154,7 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     private func disconnect() {
         NSLog("DRIVEPLAY CarPlay scene disconnected")
+        if Self.shared === self { Self.shared = nil }
         cancellables.removeAll()
         // There is no car any more: the picture cannot go there, so the button
         // on the phone falls back to the system's list of displays — and a
@@ -188,9 +163,6 @@ public final class CarPlaySceneDelegate: UIResponder,
         // Nobody is left to watch the stream.
         ScreenShareService.shared.stop()
         ScreenShareService.shared.stopRelay()
-        // The browser on the car goes with it — the car's screen is the only
-        // place its page was shown.
-        CarBrowserStream.shared.stop()
         interfaceController = nil
         carWindow = nil
         tabBarTemplate = nil
@@ -199,7 +171,6 @@ public final class CarPlaySceneDelegate: UIResponder,
         castTemplate = nil
         browserTemplate = nil
         searchTemplate = nil
-        browserAddressBar = nil
     }
 
     // MARK: - The tabs
@@ -251,18 +222,6 @@ public final class CarPlaySceneDelegate: UIResponder,
             .sink { [weak self] _ in self?.refreshCast() }
             .store(in: &cancellables)
 
-        // The browser on the car changes on its own — the page's address, and
-        // whether it is running at all.
-        //
-        // Only **those two** are watched: the Browser tab's list carries a
-        // tile for every site the app knows, and the tab is sent to the car
-        // whole whenever it is rebuilt. A scroll changes neither, so a
-        // scrolling page must not rebuild the tab.
-        CarBrowserStream.shared.$address
-            .combineLatest(CarBrowserStream.shared.$isRunning)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refreshBrowser() }
-            .store(in: &cancellables)
     }
 
     /// The catalogue and the favourites are one thing: they come from the same
@@ -289,22 +248,6 @@ public final class CarPlaySceneDelegate: UIResponder,
                                                                   prefersVideo: Self.isEntitledToVideo))
     }
 
-    /// The Browser tab is brought up to date with the browser on the car.
-    private func refreshBrowser() {
-        browserTemplate?.updateSections(CarPlayTemplates.browserSections(state: currentBrowserState(),
-                                                                       owner: self,
-                                                                       prefersVideo: Self.isEntitledToVideo))
-    }
-
-    /// The state of the browser on the car — read from the app, not guessed.
-    private func currentBrowserState() -> CarBrowserState {
-        let browser = CarBrowserStream.shared
-        return CarBrowserState(address: browser.address,
-                               canGoBack: browser.canGoBack,
-                               canGoForward: browser.canGoForward,
-                               isRunning: browser.isRunning)
-    }
-
     /// The state the Cast tab shows — read from the app, not guessed.
     private func currentCastState() -> CarPlayCastState {
         let playback = PlaybackManager.shared
@@ -327,10 +270,117 @@ public final class CarPlaySceneDelegate: UIResponder,
         } else if selectedTemplate === castTemplate {
             refreshCast()
         } else if selectedTemplate === browserTemplate {
-            // The Browser tab opens with the address bar — the header the
-            // user asked for. The list is behind it, one "back" away.
-            pushBrowserAddressBar()
+            openBrowser(url: URL(string: "https://example.com"))
         }
+    }
+
+    // MARK: - Browser Actions
+
+    public func openBrowser(url: URL? = nil) {
+        let targetURL = url ?? URL(string: "https://example.com")!
+        NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", targetURL.absoluteString)
+
+        CarDisplaySession.shared.requestCarScreen()
+        CarDisplaySession.shared.open(address: targetURL.absoluteString)
+
+        guard let controller = interfaceController else {
+            NSLog("DRIVEPLAY CarPlay openBrowser: interfaceController is nil")
+            return
+        }
+
+        var items: [CPListTemplateItem] = []
+
+        // 1. Current URL status
+        let currentItem = CPListItem(
+            text: targetURL.host ?? targetURL.absoluteString,
+            detailText: "Active: \(targetURL.absoluteString)",
+            image: UIImage(systemName: "safari")
+        )
+        items.append(currentItem)
+
+        // 2. Type URL / Search with CarPlay Keyboard
+        let searchKeyboardItem = CPListItem(
+            text: "Type URL or Search...",
+            detailText: "Open CarPlay on-screen keyboard",
+            image: UIImage(systemName: "keyboard")
+        )
+        searchKeyboardItem.accessoryType = .disclosureIndicator
+        searchKeyboardItem.handler = { [weak self] _, completion in
+            self?.pushBrowserAddressBar()
+            completion()
+        }
+        items.append(searchKeyboardItem)
+
+        // 3. Quick Navigation Links
+        let googleItem = CPListItem(text: "Google", detailText: "https://www.google.com", image: UIImage(systemName: "magnifyingglass"))
+        googleItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.google.com"))
+            completion()
+        }
+        items.append(googleItem)
+
+        let ytItem = CPListItem(text: "YouTube", detailText: "https://www.youtube.com", image: UIImage(systemName: "play.rectangle.fill"))
+        ytItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.youtube.com"))
+            completion()
+        }
+        items.append(ytItem)
+
+        let wikiItem = CPListItem(text: "Wikipedia", detailText: "https://www.wikipedia.org", image: UIImage(systemName: "book.fill"))
+        wikiItem.handler = { [weak self] _, completion in
+            self?.openBrowser(url: URL(string: "https://www.wikipedia.org"))
+            completion()
+        }
+        items.append(wikiItem)
+
+        // 4. Close Browser button
+        let closeItem = CPListItem(
+            text: "Close Browser",
+            detailText: "Return to Home, Favorites and Cast",
+            image: UIImage(systemName: "xmark.circle")
+        )
+        closeItem.handler = { [weak self] _, completion in
+            self?.closeBrowser()
+            completion()
+        }
+        items.append(closeItem)
+
+        let section = CPListSection(items: items, header: "Web Browser: \(targetURL.host ?? "Online")", sectionIndexTitle: nil)
+        let pageTemplate = CPListTemplate(title: targetURL.host ?? "Web Browser", sections: [section])
+
+        let closeBarBtn = CPBarButton(title: "Close", handler: { [weak self] _ in
+            self?.closeBrowser()
+        })
+        pageTemplate.leadingNavigationBarButtons = [closeBarBtn]
+
+        controller.pushTemplate(pageTemplate, animated: true) { success, error in
+            if !success {
+                NSLog("DRIVEPLAY push browser page template failed: %@", String(describing: error))
+            } else {
+                NSLog("DRIVEPLAY push browser page template succeeded for: %@", targetURL.absoluteString)
+            }
+        }
+    }
+
+    public func pushBrowserAddressBar() {
+        guard let controller = interfaceController else { return }
+        let searchDelegate = browserSearchDelegate ?? CarPlayBrowserSearchDelegate(owner: self)
+        self.browserSearchDelegate = searchDelegate
+        searchDelegate.dismissAddressBar = { [weak self] in
+            self?.popTopTemplate("the browser address bar")
+        }
+        let template = CPSearchTemplate()
+        template.delegate = searchDelegate
+        controller.pushTemplate(template, animated: true) { success, error in
+            if !success {
+                NSLog("DRIVEPLAY push browser address bar failed: %@", String(describing: error))
+            }
+        }
+    }
+
+    public func closeBrowser() {
+        NSLog("DRIVEPLAY CarPlay closeBrowser requested: returning to Home")
+        interfaceController?.popToRootTemplate(animated: true) { _, _ in }
     }
 
     // MARK: - What a row asks for
@@ -386,35 +436,7 @@ public final class CarPlaySceneDelegate: UIResponder,
         }
     }
 
-    // MARK: - The car's address bar
-
-    /// The address bar of the car's browser.
-    ///
-    /// A `CPSearchTemplate` is the **only** CarPlay chrome with a text field,
-    /// and the tab bar rejects one — so the address bar is pushed onto the
-    /// stack. The stack is reset first, so it never piles up when the tab is
-    /// picked again.
-    func pushBrowserAddressBar() {
-        guard let controller = interfaceController else { return }
-        controller.popToRootTemplate(animated: false) { _, _ in
-            guard let controller = self.interfaceController,
-                  let delegate = self.browserSearch else { return }
-            let template = self.browserAddressBar ?? CPSearchTemplate()
-            template.delegate = delegate
-            self.browserAddressBar = template
-            controller.pushTemplate(template, animated: true) { success, error in
-                if !success {
-                    NSLog("DRIVEPLAY push the browser address bar failed: %@",
-                          String(describing: error))
-                }
-            }
-        }
-    }
-
-    /// The address bar goes back to the list it was pushed from.
-    private func popBrowserAddressBar() {
-        popTopTemplate("the browser address bar")
-    }
+    // MARK: - Navigation
 
     /// Goes back one template.
     ///
@@ -426,34 +448,6 @@ public final class CarPlaySceneDelegate: UIResponder,
             if !success {
                 NSLog("DRIVEPLAY pop %@ failed: %@", what, String(describing: error))
             }
-        }
-    }
-
-    /// A page of the browser opens — **on the car**, in the app's own web view,
-    /// drawn into the picture the car plays.
-    ///
-    /// The way a page is routed is the address bar's own, so the Browser tab's
-    /// sites and the address bar's results end up in the same place. The tab
-    /// follows the browser's own state, so it is not rebuilt here.
-    func openOnCar(address: String) {
-        browserSearch?.openAddress(address)
-    }
-
-    /// The car drives the page it is showing — a car screen is not a touch
-    /// screen, so the rows are the controls.
-    ///
-    /// The tab is **not** rebuilt here: a scroll changes nothing the tab
-    /// shows, and the tab carries a tile for every site — sending it to the
-    /// car again for every scroll is what took the CarPlay scene down in the
-    /// fifth pass. The tab follows the browser's own state instead.
-    func driveCarBrowser(_ command: CarBrowserCommand) {
-        switch command {
-        case .back: CarBrowserStream.shared.goBack()
-        case .forward: CarBrowserStream.shared.goForward()
-        case .reload: CarBrowserStream.shared.reload()
-        case .scrollUp: CarBrowserStream.shared.scrollUp()
-        case .scrollDown: CarBrowserStream.shared.scrollDown()
-        case .close: CarBrowserStream.shared.close()
         }
     }
 
@@ -631,6 +625,13 @@ public final class CarPlaySceneDelegate: UIResponder,
         completionHandler()
     }
 
+    @objc public func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+        if let firstChannel = searchResults.values.first {
+            play(channel: firstChannel)
+            popTopTemplate()
+        }
+    }
+
     /// The row for a channel — built the first time it is asked for and kept
     /// until the cache is full.
     private func searchRow(for channel: Channel) -> CPListItem {
@@ -642,5 +643,83 @@ public final class CarPlaySceneDelegate: UIResponder,
             searchRows[searchRowOrder.removeFirst()] = nil
         }
         return item
+    }
+}
+
+final class CarPlayBrowserSearchDelegate: NSObject, CPSearchTemplateDelegate {
+    weak var owner: CarPlaySceneDelegate?
+    var dismissAddressBar: () -> Void = {}
+    private var backRow: CPListItem?
+    private var resultURLs: [ObjectIdentifier: URL] = [:]
+
+    init(owner: CarPlaySceneDelegate?) {
+        self.owner = owner
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        updatedSearchText searchText: String,
+                        completionHandler: @escaping ([CPListItem]) -> Void) {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var items: [CPListItem] = []
+        resultURLs.removeAll()
+
+        let back = backRow ?? CPListItem(text: "Back to Browser", detailText: nil, image: UIImage(systemName: "chevron.backward"))
+        backRow = back
+        items.append(back)
+
+        if !query.isEmpty {
+            let urlString: String
+            let detail: String
+            if query.contains(".") && !query.contains(" ") {
+                urlString = query.hasPrefix("http") ? query : "https://\(query)"
+                detail = "Navigate to \(urlString)"
+            } else {
+                let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+                urlString = "https://www.google.com/search?q=\(encoded)"
+                detail = "Search Google for '\(query)'"
+            }
+            if let target = URL(string: urlString) {
+                let goItem = CPListItem(text: query, detailText: detail, image: UIImage(systemName: "arrow.right.circle.fill"))
+                resultURLs[ObjectIdentifier(goItem)] = target
+                items.append(goItem)
+            }
+        }
+
+        let bookmarks: [(String, String, String)] = [
+            ("Google", "Search the web", "https://www.google.com"),
+            ("YouTube", "Watch videos & streams", "https://www.youtube.com"),
+            ("Wikipedia", "The free encyclopedia", "https://www.wikipedia.org"),
+            ("Reddit", "Dive into anything", "https://www.reddit.com")
+        ]
+        for (name, desc, urlStr) in bookmarks {
+            if query.isEmpty || name.localizedCaseInsensitiveContains(query) {
+                if let u = URL(string: urlStr) {
+                    let bItem = CPListItem(text: name, detailText: desc, image: UIImage(systemName: "globe"))
+                    resultURLs[ObjectIdentifier(bItem)] = u
+                    items.append(bItem)
+                }
+            }
+        }
+        completionHandler(items)
+    }
+
+    func searchTemplate(_ searchTemplate: CPSearchTemplate,
+                        selectedResult item: CPListItem,
+                        completionHandler: @escaping () -> Void) {
+        if let back = backRow, item === back {
+            dismissAddressBar()
+            completionHandler()
+            return
+        }
+        if let targetURL = resultURLs[ObjectIdentifier(item)] {
+            owner?.openBrowser(url: targetURL)
+        }
+        completionHandler()
+    }
+
+    func searchTemplateSearchButtonPressed(_ searchTemplate: CPSearchTemplate) {
+        if let firstURL = resultURLs.values.first {
+            owner?.openBrowser(url: firstURL)
+        }
     }
 }

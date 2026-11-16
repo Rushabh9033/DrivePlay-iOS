@@ -12,12 +12,10 @@ settings:
   ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
   # Which CarPlay category this build asks for: "audio" or "video".
   #
-  # Apple grants one category per app and the capability lives on the app id,
-  # so a build is signed with the entitlement or it does not build at all. The
-  # setting picks the entitlements file and tells the app what it got — the two
-  # can never disagree. Flip it to "video" once the app id carries the CarPlay
-  # Video capability.
-  CARPLAY_CATEGORY: "audio"
+  # Apple granted the CarPlay Video capability (Case-ID 23260500) and the
+  # provisioning profile carries both carplay-audio and carplay-video.
+  # "video" is the permanent default so the car display renders video surfaces.
+  CARPLAY_CATEGORY: "video"
 targets:
   CarTV:
     type: application
@@ -70,6 +68,10 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
+            UIWindowSceneSessionRoleCarPlay:
+              - UISceneConfigurationName: "CarPlay Window Configuration"
+                UISceneClassName: "UIWindowScene"
+                UISceneDelegateClassName: "CarTV.CarPlayWindowSceneDelegate"
             CPTemplateApplicationSceneSessionRoleApplication:
               - UISceneConfigurationName: "CarPlay Configuration"
                 UISceneDelegateClassName: "CarTV.CarPlaySceneDelegate"
@@ -79,17 +81,6 @@ targets:
             UIWindowSceneSessionRoleExternalDisplay:
               - UISceneConfigurationName: "External Display"
                 UISceneDelegateClassName: "CarTV.ExternalDisplaySceneDelegate"
-            # The **experimental** CarPlay window role. CarPlay's documented API
-            # has no web template at all, so the only candidate for a real
-            # WKWebView on a car's display is a UIWindow scene with this role —
-            # the same arrangement the shipping app CarDash declares
-            # ("UIWindowSceneSessionRoleCarPlay" → "UIWindowScene"). Whether
-            # iOS delivers it to this app is the experiment: the probe logs
-            # "DRIVEPLAY-WEB scene connected role=…".
-            UIWindowSceneSessionRoleCarPlay:
-              - UISceneClassName: "UIWindowScene"
-                UISceneConfigurationName: "CarPlay Vehicle Window"
-                UISceneDelegateClassName: "CarTV.CarPlayWindowProbe"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rushabh.cartvv
