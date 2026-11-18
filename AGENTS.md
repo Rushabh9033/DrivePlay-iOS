@@ -14,6 +14,16 @@ Project-specific rules for this repo. The global `~/.claude/CLAUDE.md` still app
 > 5. **Never route template application in AppDelegate:** `connectingSceneSession.role == .carTemplateApplication` must NOT be handled.
 > 6. **If an agent or xcodegen tries to re-introduce CarPlay templates or re-add deleted template files, REVERT IT IMMEDIATELY.**
 
+## ⛔ STRICT MANDATE: NO FAKE 'LIVE VIDEO AS BROWSER' (REAL NATIVE WKWEBVIEW ONLY)
+
+> [!CAUTION]
+> **DO NOT UNDER ANY CIRCUMSTANCES RE-ENABLE `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` OR USE `CarBrowserStream` TO STREAM A WEBPAGE AS AN HLS VIDEO (`AVPlayer`) TO THE CAR DISPLAY.**
+>
+> 1. **Zero Video Streaming for Browser:** Web browsing on the car display MUST be a 100% native, interactive `WKWebView` hierarchy (`CarPlayWebViewController` or `InCarAutomotiveController.browserContainer` / `DrivePlayRealBrowserViewController`). Never take snapshots of a web view and feed them to an HLS encoder or AVPlayer.
+> 2. **Direct Touch & 60fps Scrolling:** Users interact with the real DOM and WebKit layer directly on the car display (direct touch taps, smooth finger scrolling, text selection, link navigation, address bar, floating keyboard).
+> 3. **CarBrowserConfiguration:** `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` is permanently locked to `false`.
+> 4. **Parking Gate:** Do not block stationary testing or parking with an intrusive full-screen lock. The gate only pauses browsing if active vehicle movement (`speed > 0.8 m/s`) is detected.
+
 ## Build & test
 
 **The user's rule: the physical iPhone 13 only.** The iPhone 18 Pro

@@ -11,19 +11,18 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
         let handsetTabs = AppTabSelection.shared
         handsetTabs.tab = .home
 
-        // Verify CarPlay actions do not modify handset tab selection
-        let sceneDelegate = CarPlaySceneDelegate()
-        sceneDelegate.togglePlayback()
-        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay playback toggle must not alter handset active tab")
+        // Verify in-car actions do not modify handset tab selection
+        let inCarController = InCarAutomotiveController(isInteractive: true)
+        inCarController.switchTab(.browser)
+        XCTAssertEqual(handsetTabs.tab, .home, "In-car browser tab switch must not alter handset active tab")
 
-        sceneDelegate.togglePicture()
-        XCTAssertEqual(handsetTabs.tab, .home, "CarPlay picture toggle must not alter handset active tab")
+        inCarController.switchTab(.home)
+        XCTAssertEqual(handsetTabs.tab, .home, "In-car home tab switch must not alter handset active tab")
 
         handsetTabs.tab = .vault
-        let missing = URL(fileURLWithPath: "/tmp/driveplay-no-such-stream.m3u8")
-        let channel = Channel(name: "Test", streamURL: missing, groupTitle: "News")
-        sceneDelegate.play(channel: channel)
-        XCTAssertEqual(handsetTabs.tab, .vault, "CarPlay video stream playback must not alter handset active tab")
+        let carWeb = CarPlayWebViewController()
+        carWeb.open(url: URL(string: "https://www.google.com")!)
+        XCTAssertEqual(handsetTabs.tab, .vault, "CarPlay window browser open must not alter handset active tab")
     }
 
     @MainActor

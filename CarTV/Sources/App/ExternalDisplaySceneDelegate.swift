@@ -14,14 +14,8 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
         guard let windowScene = scene as? UIWindowScene else { return }
 
         let externalWindow = UIWindow(windowScene: windowScene)
-        let isInteractive: Bool
-        if #available(iOS 16.0, *) {
-            isInteractive = (session.role != .windowExternalDisplayNonInteractive)
-        } else {
-            isInteractive = true
-        }
-
-        let controller = InCarAutomotiveController(isInteractive: isInteractive)
+        // Automotive displays must always provide direct interactive controls and real WebKit
+        let controller = InCarAutomotiveController(isInteractive: true)
         externalWindow.rootViewController = controller
         externalWindow.isHidden = false
         externalWindow.makeKeyAndVisible()

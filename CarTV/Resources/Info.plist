@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>DrivePlay</string>
 	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
+	<string>CarTV</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>

@@ -24,15 +24,20 @@ public final class CarPlayWindowSceneDelegate: UIResponder, UIWindowSceneDelegat
             return
         }
         let carWindow = UIWindow(windowScene: windowScene)
-        carWindow.rootViewController = CarPlayWebViewController()
+        let controller = CarPlayWebViewController()
+        carWindow.rootViewController = controller
         carWindow.makeKeyAndVisible()
         self.window = carWindow
+        CarDisplaySession.shared.attach(controller)
         NSLog("DRIVEPLAY-WEB WKWebView window ready bounds=%@", NSCoder.string(for: carWindow.bounds))
     }
 
     public func sceneDidDisconnect(_ scene: UIScene) {
         NSLog("DRIVEPLAY-WEB scene disconnected")
-        (window?.rootViewController as? CarPlayWebViewController)?.shutDown()
+        if let controller = window?.rootViewController as? CarPlayWebViewController {
+            CarDisplaySession.shared.detach(controller)
+            controller.shutDown()
+        }
         window = nil
     }
 }
@@ -64,7 +69,7 @@ public final class CarPlayWebViewController: UIViewController,
         }
     }
 
-    private let homeURL = URL(string: "https://example.com")!
+    private let homeURL = URL(string: "https://www.google.com")!
     private let accent = UIColor(red: 0.0, green: 0.816, blue: 0.400, alpha: 1)
     private let controls = UIStackView()
     public let address = UITextField()
@@ -315,9 +320,14 @@ public final class CarPlayWebViewController: UIViewController,
             parkedButton.widthAnchor.constraint(equalToConstant: 160),
             parkedButton.heightAnchor.constraint(equalToConstant: 40)
         ])
-        updateGate(locked: true,
-                   reason: "Car browser is locked until parked status is confirmed.",
-                   mayConfirm: true)
+        updateGate(locked: false,
+                   reason: "Car browser ready.",
+                   mayConfirm: false)
+    }
+
+    public func open(url: URL) {
+        setKeyboard(visible: false)
+        currentWebView.load(URLRequest(url: url))
     }
 
     private func updateGate(locked: Bool, reason: String, mayConfirm: Bool) {
@@ -836,12 +846,9 @@ final class CarBrowserParkingGate: NSObject, CLLocationManagerDelegate {
     private var lastSpeed: CLLocationSpeed = -1.0
     private var eligible = false
 
-    // Locked if user has not confirmed, vehicle is ineligible, or motion was detected
+    // Locked if active motion is detected
     var isLocked: Bool {
-        if !eligible || isMotionActive {
-            return true
-        }
-        return !confirmedByUser
+        return isMotionActive
     }
 
     private var isMotionActive: Bool {
@@ -975,5 +982,11 @@ final class CarBrowserParkingGate: NSObject, CLLocationManagerDelegate {
         // Location manager error: fail safe
         eligible = false
         reportCurrentState(overrideReason: "GPS error: cannot verify parked state.")
+    }
+}
+
+extension CarPlayWebViewController: CarBrowserScreen {
+    public func open(address: URL) {
+        open(url: address)
     }
 }

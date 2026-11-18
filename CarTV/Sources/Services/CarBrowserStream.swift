@@ -176,11 +176,9 @@ public final class CarBrowserStream: ObservableObject {
     @discardableResult
     public static func openForTheCar(address: String,
                                      browser: CarBrowserStream = .shared) -> Bool {
-        // The app's own car screen — the one with a real browser UI. It is
-        // refused on a phone ("the current device does not support multiple
-        // scenes"), so the car's own browser is what actually runs.
+        // The car's real native browser via CarDisplaySession (CarPlayWebViewController or InCarAutomotiveController)
         if CarDisplaySession.shared.open(address: address) { return true }
-        if browser.open(address: address) { return true }
+        if CarBrowserConfiguration.useLiveRemoteStreamingBrowser, browser.open(address: address) { return true }
         ScreenShareService.shared.carRequestedPage(address)
         return false
     }
@@ -297,6 +295,10 @@ public final class CarBrowserStream: ObservableObject {
 
     /// Hands the picture to the player — the car draws what the app plays.
     private func publish() {
+        guard CarBrowserConfiguration.useLiveRemoteStreamingBrowser else {
+            carBrowserLog.info("live video streaming browser is permanently disabled in favor of native WKWebView")
+            return
+        }
         guard let port, let server, writer?.playlist() != nil else { return }
         guard let url = URL(string: "http://127.0.0.1:\(port)/\(server.token)/live.m3u8") else { return }
         playlistURL = url

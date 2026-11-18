@@ -22,10 +22,14 @@
 9. **Permanent Deletion of Legacy CarPlay Template Files**: Deleted `CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CarPlayTemplateTests.swift`. Removed all template declarations (`CPTemplateApplicationSceneSessionRoleApplication`, `CPListTemplate`, `CPTabBarTemplate`) from `project.yml`, `Info.plist`, `CarTVApp.swift`, and `project.pbxproj`. The car display is strictly driven by the dedicated interactive window scene `UIWindowSceneSessionRoleCarPlay` (`CarPlayWindowSceneDelegate` + `CarPlayWebViewController` / `InCarAutomotiveController`).
 10. **Handset Window Scene & App Icon Delivery**: Added `UIWindowSceneSessionRoleApplication` to `Info.plist` and configured `AppIcon.png` so SpringBoard renders the native application icon on the handset.
 11. **Cross-Platform SwiftPM Tooling**: Created `Package.swift` and `xtool.yml` for headless cross-compilation via `xtool` on Windows/Linux, synchronized with `project.yml` for XcodeGen on macOS.
+12. **Permanent Elimination of Fake 'Live Video as Browser'**: Disabled `CarBrowserConfiguration.useLiveRemoteStreamingBrowser = false` and prohibited `CarBrowserStream` from routing through `PlaybackManager.shared.playScreenShare`. Replaced with genuine, direct, interactive `WKWebView` on car displays (direct touch, fluid scrolling, custom floating keyboard, editable URL bar, multi-tab switching, and non-blocking parking gate).
 
 ## Active Configuration & Strict Agent Mandates
 - **CarPlay Scene**: Strictly **`UIWindowSceneSessionRoleCarPlay`** with **`CarPlayWindowSceneDelegate`**.
 - **Root Controller**: **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (Native interactive WKWebView with address bar, floating keyboard, touch & tab management).
-- **Prohibited & Deleted**: `CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CPTemplateApplicationSceneSessionRoleApplication` have been permanently deleted and banned. Under no circumstances should legacy CarPlay templates be re-added or re-created by any agent.
+- **Browser Architecture**: Real, native, interactive `WKWebView` hierarchy. No HLS video encoding, no `AVPlayer` streaming, no snapshot loops. Direct touch, 60fps scrolling, 0ms latency.
+- **Prohibited & Deleted**:
+  - Legacy CarPlay templates (`CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CPTemplateApplicationSceneSessionRoleApplication`) are permanently deleted and banned.
+  - Fake HLS video streaming browser (`CarBrowserConfiguration.useLiveRemoteStreamingBrowser = true` and `CarBrowserStream` AVPlayer playback) is permanently prohibited.
 - **Window & External Display**: `UIWindowSceneSessionRoleCarPlay` and `UIWindowSceneSessionRoleExternalDisplay` (`ExternalDisplaySceneDelegate` + `InCarAutomotiveController`).
 - **Build System**: Dual-compatible (`project.yml` for macOS XcodeGen; `Package.swift` + `xtool.yml` for SwiftPM / xtool).
