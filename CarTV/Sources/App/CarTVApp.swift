@@ -56,6 +56,7 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
             print(logMsg)
             fflush(stdout)
             let config = UISceneConfiguration(name: "CarPlay Configuration", sessionRole: connectingSceneSession.role)
+            config.sceneClass = CPTemplateApplicationScene.self
             config.delegateClass = CarPlaySceneDelegate.self
             return config
         } else if connectingSceneSession.role.rawValue == "UIWindowSceneSessionRoleCarPlay" {
@@ -64,6 +65,7 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
             print(logMsg)
             fflush(stdout)
             let config = UISceneConfiguration(name: "CarPlay Window Configuration", sessionRole: connectingSceneSession.role)
+            config.sceneClass = UIWindowScene.self
             config.delegateClass = CarPlayWindowSceneDelegate.self
             return config
         } else if connectingSceneSession.role == .windowExternalDisplay ||
@@ -73,23 +75,17 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
             print(logMsg)
             fflush(stdout)
             let config = UISceneConfiguration(name: "External Display", sessionRole: connectingSceneSession.role)
+            config.sceneClass = UIWindowScene.self
             config.delegateClass = ExternalDisplaySceneDelegate.self
             return config
         }
         
-        if connectingSceneSession.role == .windowApplication {
-            let logMsg = "DRIVEPLAY AppDelegate returning UISceneConfiguration(name: nil) for .windowApplication"
-            NSLog("%@", logMsg)
-            print(logMsg)
-            fflush(stdout)
-            return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
-        }
-        
-        let logMsg = "DRIVEPLAY AppDelegate fallback returning UISceneConfiguration(name: nil) for role: \(connectingSceneSession.role.rawValue)"
+        let logMsg = "DRIVEPLAY AppDelegate returning Default Configuration for role: \(connectingSceneSession.role.rawValue)"
         NSLog("%@", logMsg)
         print(logMsg)
         fflush(stdout)
-        return UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+        return config
     }
 }
 

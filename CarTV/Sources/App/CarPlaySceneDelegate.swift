@@ -69,6 +69,13 @@ public final class CarPlaySceneDelegate: UIResponder,
     }
 
     private func connect(interfaceController: CPInterfaceController, window: CPWindow?) {
+        if self.interfaceController === interfaceController && tabBarTemplate != nil {
+            NSLog("DRIVEPLAY CarPlay scene already connected to this interfaceController")
+            if self.carWindow == nil, let win = window {
+                self.carWindow = win
+            }
+            return
+        }
         NSLog("DRIVEPLAY CarPlay scene connected")
         Self.shared = self
         self.interfaceController = interfaceController
