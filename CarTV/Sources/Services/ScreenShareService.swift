@@ -7,6 +7,9 @@ import Network
 import ReplayKit
 import UIKit
 import UniformTypeIdentifiers
+#if canImport(Shared)
+import Shared
+#endif
 
 /// Live screen sharing: the phone's screen, sent to the car as a video stream.
 ///

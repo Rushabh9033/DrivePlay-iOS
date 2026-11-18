@@ -1,5 +1,8 @@
 import Foundation
 import Network
+#if canImport(Shared)
+import Shared
+#endif
 
 /// The app's end of the relay channel.
 ///

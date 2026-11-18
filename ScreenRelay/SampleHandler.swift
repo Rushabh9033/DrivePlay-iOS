@@ -5,6 +5,9 @@ import CoreVideo
 import Foundation
 import Network
 import ReplayKit
+#if canImport(Shared)
+import Shared
+#endif
 
 /// The broadcast upload extension: the phone's screen, as a live stream.
 ///

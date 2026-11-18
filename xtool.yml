@@ -1,0 +1,5 @@
+version: 1
+bundleID: com.rushabh.cartvv
+product: CarTV
+infoPath: CarTV/Resources/Info.plist
+entitlementsPath: CarTV/Resources/CarTV.video.entitlements

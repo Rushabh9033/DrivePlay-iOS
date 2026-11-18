@@ -28,12 +28,18 @@ import Network
 /// instead of writing a file: an initialisation segment (`moov`) first, then one
 /// `moof`+`mdat` fragment per second. That is exactly what a live HLS playlist
 /// over HTTP needs, and `AVPlayer` — the player CarPlay draws — reads it.
-final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
+public final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
 
-    struct Fragment {
-        let index: Int
-        let duration: Double
-        let data: Data
+    public struct Fragment {
+        public let index: Int
+        public let duration: Double
+        public let data: Data
+
+        public init(index: Int, duration: Double, data: Data) {
+            self.index = index
+            self.duration = duration
+            self.data = data
+        }
     }
 
     private let writer: AVAssetWriter
@@ -54,7 +60,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     private var readyCallback: (() -> Void)?
 
     /// Called once, when there is something to serve.
-    var onReady: (() -> Void)? {
+    public var onReady: (() -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return readyCallback }
         set { lock.lock(); readyCallback = newValue; lock.unlock() }
     }
@@ -76,7 +82,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     }
 
     /// The encoder, or nil when it cannot be set up.
-    static func make() -> LiveScreenWriter? {
+    public static func make() -> LiveScreenWriter? {
         guard let writer = try? AVAssetWriter(contentType: .mpeg4Movie) else { return nil }
         return LiveScreenWriter(writer: writer)
     }
@@ -84,7 +90,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     // MARK: Frames
 
     /// Adds one captured frame. Safe to call from any thread.
-    func append(pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
+    public func append(pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
         queue.async { [weak self] in
             self?.appendOnQueue(pixelBuffer: pixelBuffer, presentationTime: presentationTime)
         }
@@ -168,7 +174,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
 
     // MARK: Fragments
 
-    func assetWriter(
+    public func assetWriter(
         _ assetWriter: AVAssetWriter,
         didOutputSegmentData segmentData: Data,
         segmentType: AVAssetSegmentType,
@@ -208,7 +214,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     }
 
     /// The fragments in the window, read under the lock.
-    var currentFragments: [Fragment] {
+    public var currentFragments: [Fragment] {
         lock.lock()
         defer { lock.unlock() }
         return fragments
@@ -220,7 +226,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     /// The segment names are relative to the playlist's own folder — the
     /// playlist is served from `/<token>/`, so `init.mp4` resolves to
     /// `/<token>/init.mp4`. The token is enforced by the request path.
-    func playlist() -> Data? {
+    public func playlist() -> Data? {
         lock.lock()
         defer { lock.unlock() }
         guard let initialisation, !fragments.isEmpty else { return nil }
@@ -242,13 +248,13 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
         return Data(text.utf8)
     }
 
-    func initialisationSegment() -> Data? {
+    public func initialisationSegment() -> Data? {
         lock.lock()
         defer { lock.unlock() }
         return initialisation
     }
 
-    func fragment(index: Int) -> Data? {
+    public func fragment(index: Int) -> Data? {
         lock.lock()
         defer { lock.unlock() }
         return fragments.first { $0.index == index }?.data
@@ -258,7 +264,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
     ///
     /// The completion runs when the writer is closed — or when it was never
     /// open, which is the case when not a single frame ever arrived.
-    func finish(completion: (() -> Void)? = nil) {
+    public func finish(completion: (() -> Void)? = nil) {
         // The writer is captured **strongly**: the owner drops it right after
         // this call, and a weak capture would let it die before the queued
         // block runs — the encoder would never be finished and the last
@@ -286,7 +292,7 @@ final class LiveScreenWriter: NSObject, AVAssetWriterDelegate {
 ///
 /// Every path carries a random token: the stream is the phone's screen, so it
 /// must not be readable by whatever else is on the network.
-final class ScreenStreamServer {
+public final class ScreenStreamServer {
 
     /// The token every path of the stream carries.
     ///
@@ -297,18 +303,18 @@ final class ScreenStreamServer {
     /// The dashes of a UUID are dropped: the token rides in a URL path and in
     /// the relay's announcement line, and one unbroken string of hex never
     /// needs escaping in either.
-    let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+    public let token = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
 
     private let writer: LiveScreenWriter
     private let queue = DispatchQueue(label: "com.rushabh.cartvv.screenshare.server")
     private var listener: NWListener?
 
-    init(writer: LiveScreenWriter) {
+    public init(writer: LiveScreenWriter) {
         self.writer = writer
     }
 
     /// Starts listening. `ready` is called with the port once it is bound.
-    func start(ready: @escaping (UInt16) -> Void) throws {
+    public func start(ready: @escaping (UInt16) -> Void) throws {
         let listener = try NWListener(using: .tcp, on: .any)
         self.listener = listener
         listener.stateUpdateHandler = { [weak self] state in
@@ -321,7 +327,7 @@ final class ScreenStreamServer {
         listener.start(queue: queue)
     }
 
-    func stop() {
+    public func stop() {
         listener?.cancel()
         listener = nil
     }
@@ -429,18 +435,18 @@ final class ScreenStreamServer {
 /// frame of another size is dropped, and a rotated phone would freeze the
 /// stream for good. So every frame is drawn onto the **same** canvas: scaled
 /// to fit, centred, with black around it.
-enum ScreenFrameScaler {
+public enum ScreenFrameScaler {
 
     /// The canvas every picture is drawn on. A car's screen is landscape, so
     /// the canvas is too; a portrait phone gets bars on the sides.
-    static let canvas = CGSize(width: 1280, height: 720)
+    public static let canvas = CGSize(width: 1280, height: 720)
 
-    static func scale(_ source: CVPixelBuffer, context: CIContext) -> CVPixelBuffer? {
+    public static func scale(_ source: CVPixelBuffer, context: CIContext) -> CVPixelBuffer? {
         fit(CIImage(cvPixelBuffer: source), context: context)
     }
 
     /// Draws the picture onto the canvas, scaled to fit and centred.
-    static func fit(_ image: CIImage, context: CIContext) -> CVPixelBuffer? {
+    public static func fit(_ image: CIImage, context: CIContext) -> CVPixelBuffer? {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return nil }
         let factor = min(canvas.width / extent.width, canvas.height / extent.height)
@@ -495,20 +501,20 @@ enum ScreenFrameScaler {
 /// and share no container (an App Group would need another Apple-granted
 /// capability). So the extension opens a connection to the app's fixed loopback
 /// port and sends the address in one line.
-enum ScreenRelayEndpoint {
+public enum ScreenRelayEndpoint {
 
     /// The port the app listens on. It is bound to the loopback interface, so
     /// nothing outside the phone can reach it — the announcement carries the
     /// token that unlocks the screen stream.
-    static let port: UInt16 = 47311
+    public static let port: UInt16 = 47311
 
     /// The address of the extension's stream: `<port> <token>`.
-    static func announcement(port: UInt16, token: String) -> String {
+    public static func announcement(port: UInt16, token: String) -> String {
         "\(port) \(token)\n"
     }
 
     /// The address the extension announced, if the line is one.
-    static func parse(_ line: String) -> (port: UInt16, token: String)? {
+    public static func parse(_ line: String) -> (port: UInt16, token: String)? {
         let parts = line.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
         guard parts.count == 2, let port = UInt16(parts[0]), !parts[1].isEmpty else { return nil }
         return (port, parts[1])

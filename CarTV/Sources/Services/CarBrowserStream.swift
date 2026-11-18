@@ -5,6 +5,9 @@ import CoreMedia
 import Foundation
 import os
 import WebKit
+#if canImport(Shared)
+import Shared
+#endif
 
 /// The browser's own log.
 ///
