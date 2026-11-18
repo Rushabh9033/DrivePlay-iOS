@@ -288,7 +288,7 @@ public final class CarPlaySceneDelegate: UIResponder,
 
     public func openBrowser(url: URL? = nil) {
         let currentAddress = CarBrowserStream.shared.address
-        let targetURL = url ?? URL(string: currentAddress.isEmpty ? "https://example.com" : currentAddress)!
+        let targetURL = url ?? URL(string: currentAddress) ?? URL(string: "https://example.com")!
         NSLog("DRIVEPLAY CarPlay openBrowser requested: %@", CredentialRedactor.safeForLog(targetURL))
 
         if CarBrowserConfiguration.useLiveRemoteStreamingBrowser {

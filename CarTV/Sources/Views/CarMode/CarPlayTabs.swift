@@ -529,8 +529,8 @@ enum CarPlayTemplates {
         let currentHost = URL(string: stream.address)?.host ?? (stream.address.isEmpty ? "example.com" : stream.address)
 
         let openBrowserItem = CPListItem(
-            text: "▶ Watch & Browse Live Webpage",
-            detailText: stream.isRunning ? "Live Stream: \(currentHost)" : "Tap to launch live WebKit video stream",
+            text: stream.isRunning ? "▶ Live Web View (Active)" : "▶ Watch & Browse Live Webpage",
+            detailText: stream.isRunning ? "Now Streaming: \(currentHost)" : "Tap to launch live WebKit video stream",
             image: UIImage(systemName: "safari")
         )
         if #available(iOS 26.4, *) {
@@ -542,7 +542,8 @@ enum CarPlayTemplates {
             )
         }
         openBrowserItem.handler = { _, completion in
-            owner?.openBrowser(url: URL(string: stream.address.isEmpty ? "https://example.com" : stream.address))
+            let url = URL(string: stream.address) ?? URL(string: "https://example.com")
+            owner?.openBrowser(url: url)
             completion()
         }
         items.append(openBrowserItem)

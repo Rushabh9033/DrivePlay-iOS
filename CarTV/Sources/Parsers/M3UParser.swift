@@ -84,7 +84,8 @@ public struct M3UParser: Sendable {
                 }
             } else if !line.hasPrefix("#") {
                 // This is the stream URL
-                if let url = URL(string: line), let name = currentChannelName {
+                let parsedURL = URL(string: line) ?? URL(string: line.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")
+                if let url = parsedURL, let name = currentChannelName {
                     let channel = Channel(
                         id: UUID(),
                         name: name,

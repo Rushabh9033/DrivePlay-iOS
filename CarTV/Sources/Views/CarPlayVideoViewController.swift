@@ -377,9 +377,15 @@ public final class InCarAutomotiveController: UIViewController, WKNavigationDele
             targetURL = URL(string: "https://\(query)") ?? URL(string: "https://www.google.com/search?q=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!
         } else {
             let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            targetURL = URL(string: "https://www.google.com/search?q=\(encoded)")!
+            targetURL = URL(string: "https://www.google.com/search?q=\(encoded)") ?? URL(string: "https://www.google.com")!
         }
         
         openBrowser(url: targetURL)
+    }
+}
+
+extension InCarAutomotiveController: CarBrowserScreen {
+    public func open(address: URL) {
+        openBrowser(url: address)
     }
 }

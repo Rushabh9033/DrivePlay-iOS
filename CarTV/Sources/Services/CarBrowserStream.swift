@@ -100,7 +100,9 @@ public final class CarBrowserStream: ObservableObject {
     /// The web view the car looks at.
     ///
     /// Internal, so the test can measure what the car would see.
-    let webView: WKWebView
+    public var webView: WKWebView {
+        activeWebView
+    }
     /// The delegate is **weak** — the app has to hold it, or the page's
     /// address is never heard about.
     private let delegate = NavigationDelegate()
@@ -135,14 +137,17 @@ public final class CarBrowserStream: ObservableObject {
         // The same rules the phone's browser has — the car is not a loophole.
         AdBlockerEngine.shared.apply(to: configuration)
 
-        webView = WKWebView(frame: CGRect(origin: .zero, size: Self.viewport),
-                            configuration: configuration)
-        webView.navigationDelegate = delegate
+        let initial = WKWebView(frame: CGRect(origin: .zero, size: Self.viewport),
+                                configuration: configuration)
+        initial.navigationDelegate = delegate
+        tabs = [initial]
+        activeTabIndex = 0
+
         delegate.onFinish = { [weak self] url in
             guard let self, let url else { return }
             self.address = url.absoluteString
-            self.canGoBack = self.webView.canGoBack
-            self.canGoForward = self.webView.canGoForward
+            self.canGoBack = self.activeWebView.canGoBack
+            self.canGoForward = self.activeWebView.canGoForward
         }
         delegate.onFail = { reason in
             NSLog("DRIVEPLAY car browser: the page failed: %@", reason)
@@ -173,7 +178,6 @@ public final class CarBrowserStream: ObservableObject {
         // scenes"), so the car's own browser is what actually runs.
         if CarDisplaySession.shared.open(address: address) { return true }
         if browser.open(address: address) { return true }
-        BrowserTabManager.shared.loadURLInActiveTab(address)
         ScreenShareService.shared.carRequestedPage(address)
         return false
     }
@@ -193,7 +197,7 @@ public final class CarBrowserStream: ObservableObject {
     /// Loads a page — the address is already one.
     func load(url: URL) {
         address = url.absoluteString
-        webView.load(URLRequest(url: url))
+        activeWebView.load(URLRequest(url: url))
         start()
     }
 
@@ -201,19 +205,19 @@ public final class CarBrowserStream: ObservableObject {
 
     /// Goes back one page.
     func goBack() {
-        guard webView.canGoBack else { return }
-        webView.goBack()
+        guard activeWebView.canGoBack else { return }
+        activeWebView.goBack()
     }
 
     /// Goes forward one page.
     func goForward() {
-        guard webView.canGoForward else { return }
-        webView.goForward()
+        guard activeWebView.canGoForward else { return }
+        activeWebView.goForward()
     }
 
     /// Loads the page again.
     func reload() {
-        webView.reload()
+        activeWebView.reload()
     }
 
     /// Scrolls the page down.
@@ -229,14 +233,14 @@ public final class CarBrowserStream: ObservableObject {
     /// Scrolls the page — the car's scroll view is not there to be dragged, so
     /// the page is told to scroll itself.
     private func scroll(by points: Int) {
-        webView.evaluateJavaScript("window.scrollBy(0, \(points));")
+        activeWebView.evaluateJavaScript("window.scrollBy(0, \(points));")
     }
 
     /// How far the page is scrolled down — the page's own answer, so a test
     /// can tell a page that moved from a picture that did not.
     func scrollOffset() async -> Double {
         await withCheckedContinuation { continuation in
-            webView.evaluateJavaScript("window.scrollY") { value, _ in
+            activeWebView.evaluateJavaScript("window.scrollY") { value, _ in
                 continuation.resume(returning: (value as? NSNumber)?.doubleValue ?? 0)
             }
         }
@@ -295,6 +299,7 @@ public final class CarBrowserStream: ObservableObject {
         playlistURL = url
         carBrowserLog.info("the picture is served on port \(port) and handed to the player")
         PlaybackManager.shared.playScreenShare(url: url, title: "Car browser")
+        CarPlaySceneDelegate.prepareNowPlaying()
     }
 
     /// Ends the picture.
@@ -332,18 +337,25 @@ public final class CarBrowserStream: ObservableObject {
     /// One picture of the page.
     private func capturePicture() async {
         let image = await withCheckedContinuation { continuation in
-            webView.takeSnapshot(with: nil) { picture, error in
+            activeWebView.takeSnapshot(with: nil) { picture, error in
                 if let error {
                     carBrowserLog.error("the snapshot failed: \(error.localizedDescription)")
                 }
                 continuation.resume(returning: picture)
             }
         }
-        guard let image, let picture = CIImage(image: image),
-              let buffer = ScreenFrameScaler.fit(picture, context: context) else {
-            carBrowserLog.error("the page was not drawn — there is no picture to send")
-            return
+        guard let image else { return }
+
+        let buffer: CVPixelBuffer? = autoreleasepool {
+            guard let picture = CIImage(image: image),
+                  let buf = ScreenFrameScaler.fit(picture, context: context) else {
+                carBrowserLog.error("the page was not drawn — there is no picture to send")
+                return nil
+            }
+            return buf
         }
+        guard let buffer else { return }
+
         framesSent += 1
         lastFrame = buffer
         if framesSent % 30 == 1 {
@@ -383,7 +395,7 @@ public final class CarBrowserStream: ObservableObject {
             scrollDown()
             triggerImmediateCapture(delays: [0.08, 0.2, 0.35])
         case .selectLink(let href):
-            let escapedHref = href.replacingOccurrences(of: "'", with: "\\'")
+            let escapedHref = href.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
             let js = """
             (function() {
                 var links = document.querySelectorAll('a[href]');
@@ -397,10 +409,10 @@ public final class CarBrowserStream: ObservableObject {
                 return true;
             })()
             """
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            activeWebView.evaluateJavaScript(js, completionHandler: nil)
             triggerImmediateCapture(delays: [0.1, 0.3, 0.6])
         case .selectField(let fieldId):
-            let escaped = fieldId.replacingOccurrences(of: "'", with: "\\'")
+            let escaped = fieldId.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
             let js = """
             (function() {
                 var el = document.getElementById('\(escaped)') || document.querySelector('[name=\"\(escaped)\"]');
@@ -408,9 +420,11 @@ public final class CarBrowserStream: ObservableObject {
                 return false;
             })()
             """
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            activeWebView.evaluateJavaScript(js, completionHandler: nil)
         case .enterText(let text):
-            let escaped = text.replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: "\\n")
+            let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
+                              .replacingOccurrences(of: "'", with: "\\'")
+                              .replacingOccurrences(of: "\n", with: "\\n")
             let js = """
             (function() {
                 var el = document.activeElement;
@@ -427,7 +441,7 @@ public final class CarBrowserStream: ObservableObject {
                 return false;
             })()
             """
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            activeWebView.evaluateJavaScript(js, completionHandler: nil)
             triggerImmediateCapture(delays: [0.1, 0.25])
         case .submit:
             let js = """
@@ -439,7 +453,7 @@ public final class CarBrowserStream: ObservableObject {
                 return false;
             })()
             """
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            activeWebView.evaluateJavaScript(js, completionHandler: nil)
             triggerImmediateCapture(delays: [0.2, 0.5])
         case .newTab:
             openNewTab(url: URL(string: "https://example.com"))
@@ -482,7 +496,7 @@ public final class CarBrowserStream: ObservableObject {
             return links;
         })()
         """
-        guard let result = try? await webView.evaluateJavaScript(script) as? [[String: Any]] else {
+        guard let result = try? await activeWebView.evaluateJavaScript(script) as? [[String: Any]] else {
             return []
         }
         return result.compactMap { dict in
@@ -508,7 +522,7 @@ public final class CarBrowserStream: ObservableObject {
             return fields;
         })()
         """
-        guard let result = try? await webView.evaluateJavaScript(script) as? [[String: Any]] else {
+        guard let result = try? await activeWebView.evaluateJavaScript(script) as? [[String: Any]] else {
             return []
         }
         return result.compactMap { dict in
@@ -523,6 +537,23 @@ public final class CarBrowserStream: ObservableObject {
 
     private var tabs: [WKWebView] = []
     public private(set) var activeTabIndex: Int = 0
+
+    /// The currently active web view receiving inputs and providing snapshots.
+    public var activeWebView: WKWebView {
+        if tabs.isEmpty {
+            let config = WKWebViewConfiguration()
+            config.allowsInlineMediaPlayback = true
+            config.mediaTypesRequiringUserActionForPlayback = []
+            AdBlockerEngine.shared.apply(to: config)
+            let initial = WKWebView(frame: CGRect(origin: .zero, size: Self.viewport), configuration: config)
+            initial.navigationDelegate = delegate
+            tabs = [initial]
+            activeTabIndex = 0
+            return initial
+        }
+        let index = min(max(0, activeTabIndex), tabs.count - 1)
+        return tabs[index]
+    }
 
     public func openNewTab(url: URL? = nil) {
         let targetURL = url ?? URL(string: "https://example.com")!
@@ -550,8 +581,10 @@ public final class CarBrowserStream: ObservableObject {
     /// Sets the value of a specific input field in the live DOM.
     public func setFieldValue(id: String, text: String) {
         highActivityUntil = CFAbsoluteTimeGetCurrent() + 2.0
-        let escapedId = id.replacingOccurrences(of: "'", with: "\\'")
-        let escapedText = text.replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: "\\n")
+        let escapedId = id.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+        let escapedText = text.replacingOccurrences(of: "\\", with: "\\\\")
+                              .replacingOccurrences(of: "'", with: "\\'")
+                              .replacingOccurrences(of: "\n", with: "\\n")
         let js = """
         (function() {
             var el = document.getElementById('\(escapedId)') || document.querySelector('[name=\"\(escapedId)\"]');
@@ -565,7 +598,7 @@ public final class CarBrowserStream: ObservableObject {
             return false;
         })()
         """
-        webView.evaluateJavaScript(js, completionHandler: nil)
+        activeWebView.evaluateJavaScript(js, completionHandler: nil)
         triggerImmediateCapture(delays: [0.1, 0.25])
     }
 

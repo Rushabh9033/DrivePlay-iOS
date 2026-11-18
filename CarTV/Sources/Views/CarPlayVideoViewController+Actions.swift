@@ -368,7 +368,7 @@ extension InCarAutomotiveController {
                 finalUrl = URL(string: "https://\(text)") ?? URL(string: "https://www.google.com")!
             } else {
                 let q = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-                finalUrl = URL(string: "https://www.google.com/search?q=\(q)")!
+                finalUrl = URL(string: "https://www.google.com/search?q=\(q)") ?? URL(string: "https://www.google.com")!
             }
             openBrowser(url: finalUrl)
             return true

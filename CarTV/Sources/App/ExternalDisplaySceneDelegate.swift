@@ -27,6 +27,7 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
         externalWindow.makeKeyAndVisible()
         self.window = externalWindow
         self.controller = controller
+        CarDisplaySession.shared.attach(controller)
     }
 
     public func sceneDidDisconnect(_ scene: UIScene) {
@@ -38,7 +39,10 @@ public final class ExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDeleg
     /// A screen capture that outlives the scene keeps the system recording
     /// indicator on and drains the battery.
     func teardown() {
-        controller?.stopMirroring()
+        if let controller {
+            CarDisplaySession.shared.detach(controller)
+            controller.stopMirroring()
+        }
         controller = nil
         window = nil
     }
