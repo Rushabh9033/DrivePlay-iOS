@@ -95,19 +95,22 @@ DrivePlay
 
 This repository has been fully upgraded with cross-platform SwiftPM support, in-car browser enhancements, and CarPlay scene configurations.
 
-### 1. Summary of Changes Made Today
-* **CarPlay SpringBoard Registration:** Restored `CPTemplateApplicationSceneSessionRoleApplication` pointing to `CarPlaySceneDelegate` and bound the scene name `"CarPlay Configuration"` in `AppDelegate.swift` and `project.yml`. This resolves the issue where DrivePlay was missing from the CarPlay app grid and `Settings → General → CarPlay → Customize`.
+### 1. Architectural Mandate: Dedicated Interactive Window Scene Only
+> [!IMPORTANT]
+> **STRICT BAN ON CARPLAY TEMPLATES:** Legacy CarPlay templates (`CPTemplateApplicationSceneSessionRoleApplication`, `CPListTemplate`, `CPTabBarTemplate`) are strictly removed. The vehicle display runs exclusively on **`UIWindowSceneSessionRoleCarPlay`** hosted by **`CarPlayWindowSceneDelegate`** and **`CarPlayWebViewController`** / **`InCarAutomotiveController`**. Do not re-add `CPTemplateApplicationSceneSessionRoleApplication` to `project.yml` or `Info.plist`.
+
+### 2. Summary of Changes Made Today
+* **Permanent Removal of Legacy CarPlay Templates:** Completely removed `CPTemplateApplicationSceneSessionRoleApplication` from `project.yml`, `Info.plist`, and `AppDelegate.swift`. The car display is now 100% committed to the interactive window architecture (`UIWindowSceneSessionRoleCarPlay`).
 * **Dynamic Multi-Tab Streaming Routing:** Refactored `CarBrowserStream.swift` to route snapshots and commands through a dynamic `activeWebView` property, properly handling `openNewTab`, `switchToTab`, and `closeTab`.
 * **Snapshot Memory Leak Fix:** Wrapped the 15 fps WebKit snapshot capture loop inside an `autoreleasepool { ... }` block to prevent CIImage/UIImage memory bloat during prolonged vehicle streaming.
 * **JavaScript Input Escaping:** Hardened character escaping for JavaScript string injections in `enterText` and `setFieldValue` to prevent syntax errors during address and search queries.
 * **Handset Window Scene & App Icon Delivery:** Declared `UIWindowSceneSessionRoleApplication` in `UIApplicationSceneManifest` and bundled `AppIcon.png` so SpringBoard renders the native application icon cleanly on the phone.
 * **External Automotive Display Integration:** Attached `CarDisplaySession.shared` in `ExternalDisplaySceneDelegate.swift` and conformed `InCarAutomotiveController: CarBrowserScreen` for secondary screen support.
 * **Cross-Platform SwiftPM Tooling:** Introduced `Package.swift` and `xtool.yml` to support headless SwiftPM builds (`xtool`) on Windows/Linux while maintaining full compatibility with Xcode (`project.yml`).
-* **Xcode Project Synchronization & App Icon Resources:** Synchronized `project.yml`, `project.pbxproj`, and `Info.plist` via `xcodegen generate`, bundling `AppIcon.png` into Resources and cleanly declaring all scene roles (`CPTemplateApplicationSceneSessionRoleApplication`, `UIWindowSceneSessionRoleCarPlay`, `UIWindowSceneSessionRoleExternalDisplay`, and `UIWindowSceneSessionRoleApplication`).
-* **Verified Physical iPhone 13 & CarPlay Simulator Integration:** Build succeeded and installed to physical iPhone 13 (`00008110-001C60423CB8401E`). Active process PID verified on phone and rendered live in `/Users/radhikamac/Desktop/CarPlay Simulator.app` with the native 4-tab interface (`Home`, `Favorites`, `Cast`, `Browser`).
+* **Xcode Project Synchronization & App Icon Resources:** Synchronized `project.yml`, `project.pbxproj`, and `Info.plist` via `xcodegen generate`, bundling `AppIcon.png` into Resources and cleanly declaring all scene roles (`UIWindowSceneSessionRoleCarPlay`, `UIWindowSceneSessionRoleExternalDisplay`, and `UIWindowSceneSessionRoleApplication`).
 * **Robust M3U URL Parsing:** Added percent-encoding fallback to `M3UParser.swift` to handle stream URLs with unencoded spaces.
 
-### 2. Mac Migration Quick-Start Instructions
+### 3. Mac Migration Quick-Start Instructions
 
 When cloning or pulling this code to your **Mac**:
 

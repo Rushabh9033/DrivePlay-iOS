@@ -2,6 +2,17 @@
 
 Project-specific rules for this repo. The global `~/.claude/CLAUDE.md` still applies; this file wins on conflict.
 
+## ⛔ STRICT MANDATE FOR ANTIGRAVITY & CODING AGENTS (MAC & WINDOWS): NO CARPLAY TEMPLATES
+
+> [!CAUTION]
+> **DO NOT UNDER ANY CIRCUMSTANCES RE-ADD `CPTemplateApplicationSceneSessionRoleApplication` OR RE-ENABLE CARPLAY TEMPLATES (`CPListTemplate`, `CPTabBarTemplate`, `CPSearchTemplate`).**
+>
+> 1. **CarPlay Scene Architecture:** The car display MUST strictly use **`UIWindowSceneSessionRoleCarPlay`** wired to **`CarPlayWindowSceneDelegate`**.
+> 2. **Root Controller:** The root controller on the car display MUST be **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (a native `UIViewController` hierarchy with direct touch interaction, multi-tab WebKit browsing, and custom floating keyboard).
+> 3. **Never declare template roles:** `CPTemplateApplicationSceneSessionRoleApplication` is permanently banned from `project.yml` and `Info.plist`.
+> 4. **Never route template application in AppDelegate:** `connectingSceneSession.role == .carTemplateApplication` must NOT be handled.
+> 5. **If an agent or xcodegen tries to re-introduce CarPlay templates, REVERT IT IMMEDIATELY.**
+
 ## Build & test
 
 **The user's rule: the physical iPhone 13 only.** The iPhone 18 Pro
