@@ -302,7 +302,6 @@ public final class CarBrowserStream: ObservableObject {
         playlistURL = url
         carBrowserLog.info("the picture is served on port \(port) and handed to the player")
         PlaybackManager.shared.playScreenShare(url: url, title: "Car browser")
-        CarPlaySceneDelegate.prepareNowPlaying()
     }
 
     /// Ends the picture.

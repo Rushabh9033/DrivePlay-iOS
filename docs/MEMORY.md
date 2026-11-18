@@ -19,13 +19,13 @@
 6. **Force-Unwrap Runtime Crashes**: Fixed unsafe `!` in `openBrowser` and search return handlers.
 7. **JS Escaping**: Fixed backslash escaping in `enterText` and `setFieldValue` to prevent WebKit syntax errors.
 8. **M3U Unencoded Stream URLs**: Added fallback percent-encoding so URLs with spaces are not dropped.
-9. **Permanent Removal of Legacy CarPlay Templates**: Legacy CarPlay templates (`CPTemplateApplicationSceneSessionRoleApplication`, `CPListTemplate`, `CPTabBarTemplate`) are permanently removed from `project.yml`, `Info.plist`, and `AppDelegate.swift`. The car display is strictly driven by the dedicated interactive window scene `UIWindowSceneSessionRoleCarPlay` (`CarPlayWindowSceneDelegate` + `CarPlayWebViewController`).
+9. **Permanent Deletion of Legacy CarPlay Template Files**: Deleted `CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CarPlayTemplateTests.swift`. Removed all template declarations (`CPTemplateApplicationSceneSessionRoleApplication`, `CPListTemplate`, `CPTabBarTemplate`) from `project.yml`, `Info.plist`, `CarTVApp.swift`, and `project.pbxproj`. The car display is strictly driven by the dedicated interactive window scene `UIWindowSceneSessionRoleCarPlay` (`CarPlayWindowSceneDelegate` + `CarPlayWebViewController` / `InCarAutomotiveController`).
 10. **Handset Window Scene & App Icon Delivery**: Added `UIWindowSceneSessionRoleApplication` to `Info.plist` and configured `AppIcon.png` so SpringBoard renders the native application icon on the handset.
 11. **Cross-Platform SwiftPM Tooling**: Created `Package.swift` and `xtool.yml` for headless cross-compilation via `xtool` on Windows/Linux, synchronized with `project.yml` for XcodeGen on macOS.
 
 ## Active Configuration & Strict Agent Mandates
 - **CarPlay Scene**: Strictly **`UIWindowSceneSessionRoleCarPlay`** with **`CarPlayWindowSceneDelegate`**.
 - **Root Controller**: **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (Native interactive WKWebView with address bar, floating keyboard, touch & tab management).
-- **Prohibited**: Under no circumstances should `CPTemplateApplicationSceneSessionRoleApplication` or legacy CarPlay templates be re-added by any agent.
+- **Prohibited & Deleted**: `CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CPTemplateApplicationSceneSessionRoleApplication` have been permanently deleted and banned. Under no circumstances should legacy CarPlay templates be re-added or re-created by any agent.
 - **Window & External Display**: `UIWindowSceneSessionRoleCarPlay` and `UIWindowSceneSessionRoleExternalDisplay` (`ExternalDisplaySceneDelegate` + `InCarAutomotiveController`).
 - **Build System**: Dual-compatible (`project.yml` for macOS XcodeGen; `Package.swift` + `xtool.yml` for SwiftPM / xtool).

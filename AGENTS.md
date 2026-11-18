@@ -9,9 +9,10 @@ Project-specific rules for this repo. The global `~/.claude/CLAUDE.md` still app
 >
 > 1. **CarPlay Scene Architecture:** The car display MUST strictly use **`UIWindowSceneSessionRoleCarPlay`** wired to **`CarPlayWindowSceneDelegate`**.
 > 2. **Root Controller:** The root controller on the car display MUST be **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (a native `UIViewController` hierarchy with direct touch interaction, multi-tab WebKit browsing, and custom floating keyboard).
-> 3. **Never declare template roles:** `CPTemplateApplicationSceneSessionRoleApplication` is permanently banned from `project.yml` and `Info.plist`.
-> 4. **Never route template application in AppDelegate:** `connectingSceneSession.role == .carTemplateApplication` must NOT be handled.
-> 5. **If an agent or xcodegen tries to re-introduce CarPlay templates, REVERT IT IMMEDIATELY.**
+> 3. **Permanently Deleted Template Files:** All legacy template files (`CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CarPlayTemplateTests.swift`) have been completely deleted. **DO NOT RE-CREATE THEM.**
+> 4. **Never declare template roles:** `CPTemplateApplicationSceneSessionRoleApplication` is permanently banned from `project.yml` and `Info.plist`.
+> 5. **Never route template application in AppDelegate:** `connectingSceneSession.role == .carTemplateApplication` must NOT be handled.
+> 6. **If an agent or xcodegen tries to re-introduce CarPlay templates or re-add deleted template files, REVERT IT IMMEDIATELY.**
 
 ## Build & test
 
