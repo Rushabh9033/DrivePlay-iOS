@@ -103,6 +103,8 @@ This repository has been fully upgraded with cross-platform SwiftPM support, in-
 * **Handset Window Scene & App Icon Delivery:** Declared `UIWindowSceneSessionRoleApplication` in `UIApplicationSceneManifest` and bundled `AppIcon.png` so SpringBoard renders the native application icon cleanly on the phone.
 * **External Automotive Display Integration:** Attached `CarDisplaySession.shared` in `ExternalDisplaySceneDelegate.swift` and conformed `InCarAutomotiveController: CarBrowserScreen` for secondary screen support.
 * **Cross-Platform SwiftPM Tooling:** Introduced `Package.swift` and `xtool.yml` to support headless SwiftPM builds (`xtool`) on Windows/Linux while maintaining full compatibility with Xcode (`project.yml`).
+* **Xcode Project Synchronization & App Icon Resources:** Synchronized `project.yml`, `project.pbxproj`, and `Info.plist` via `xcodegen generate`, bundling `AppIcon.png` into Resources and cleanly declaring all scene roles (`CPTemplateApplicationSceneSessionRoleApplication`, `UIWindowSceneSessionRoleCarPlay`, `UIWindowSceneSessionRoleExternalDisplay`, and `UIWindowSceneSessionRoleApplication`).
+* **Verified Physical iPhone 13 & CarPlay Simulator Integration:** Build succeeded and installed to physical iPhone 13 (`00008110-001C60423CB8401E`). Active process PID verified on phone and rendered live in `/Users/radhikamac/Desktop/CarPlay Simulator.app` with the native 4-tab interface (`Home`, `Favorites`, `Cast`, `Browser`).
 * **Robust M3U URL Parsing:** Added percent-encoding fallback to `M3UParser.swift` to handle stream URLs with unencoded spaces.
 
 ### 2. Mac Migration Quick-Start Instructions
