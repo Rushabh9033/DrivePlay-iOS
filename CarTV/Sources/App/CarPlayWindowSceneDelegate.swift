@@ -156,7 +156,9 @@ public final class CarPlayWebViewController: UIViewController,
         NSLog("DRIVEPLAY-WEB browser shut down")
     }
 
-    deinit { gate.stop() }
+    deinit {
+        shutDown()
+    }
 
     // MARK: - UI
 

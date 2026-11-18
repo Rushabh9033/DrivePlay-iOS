@@ -222,81 +222,7 @@ final class ReviewRegressionTests: XCTestCase {
         XCTAssertEqual(manager.selectedSubtitleTrack, "Off", "a track that is not there must not be selected")
     }
 
-    // MARK: - The car
 
-    /// AC80: the Cast tab has no dead picture rows.
-    ///
-    /// With no player `togglePicture` and `togglePlayback` give up, so the
-    /// rows would look alive and do nothing.
-    func test_AC80_the_cast_tab_has_no_dead_picture_rows_without_a_player() {
-        let withoutPlayer = CarPlayTemplates.castSections(state: CarPlayCastState(hasPlayer: false),
-                                                          owner: nil,
-                                                          prefersVideo: false)
-        let texts = withoutPlayer[0].items.compactMap { ($0 as? CPListItem)?.text }
-        XCTAssertEqual(texts, ["Nothing is playing"])
-
-        let withPlayer = CarPlayTemplates.castSections(state: CarPlayCastState(hasPlayer: true),
-                                                        owner: nil,
-                                                        prefersVideo: false)
-        XCTAssertEqual(withPlayer[0].items.compactMap { ($0 as? CPListItem)?.text }.count, 2)
-    }
-
-    /// AC81: the "stop mirroring" row only exists while there is something to
-    /// stop.
-    func test_AC81_the_stop_row_exists_only_while_a_share_runs() {
-        func mirroringTexts(_ state: ScreenShareState) -> [String] {
-            let sections = CarPlayTemplates.castSections(state: CarPlayCastState(hasPlayer: true, share: state),
-                                                          owner: nil,
-                                                          prefersVideo: false)
-            return sections[1].items.compactMap { ($0 as? CPListItem)?.text }
-        }
-
-        XCTAssertFalse(mirroringTexts(.idle).contains("Stop mirroring"))
-        XCTAssertFalse(mirroringTexts(.failed("no camera")).contains("Stop mirroring"))
-        XCTAssertTrue(mirroringTexts(.sharing).contains("Stop mirroring"))
-    }
-
-    /// AC82: the channel picker pages, so every channel of a category is
-    /// reachable.
-    ///
-    /// CarPlay drops everything past `maximumItemCount` without a word.
-    func test_AC82_the_channel_picker_pages_so_every_channel_is_reachable() {
-        let spy = SpyActions()
-        // More channels than the car shows on one page, whatever that limit is.
-        let total = CPListTemplate.maximumItemCount + 50
-        let channels = (1...total).map { channel("C\($0)") }
-
-        let template = CarPlayTemplates.channelList(title: "Sports", channels: channels, owner: spy, prefersVideo: false)
-        let items = template.sections[0].items.compactMap { $0 as? CPListItem }
-
-        XCTAssertLessThanOrEqual(items.count, CPListTemplate.maximumItemCount)
-        let more = items.last
-        XCTAssertTrue(more?.text?.hasPrefix("More channels") == true, "a long list must offer the rest")
-
-        more?.handler?(more!, {})
-        XCTAssertEqual(spy.pushed.count, 1)
-        XCTAssertEqual(spy.pushed.first?.channels.count, total - (items.count - 1),
-                       "the next page must hold every channel that is left")
-    }
-
-    /// AC83: the Home tab stays inside CarPlay's item budget.
-    ///
-    /// Everything past the budget is dropped **silently** — a playlist with
-    /// hundreds of categories would lose its tail.
-    func test_AC83_the_home_tab_stays_inside_the_item_budget() {
-        let channels = (1...400).map { channel("C\($0)") }
-        let groups = (1...100).map { ChannelGroup(name: "G\($0)", channels: [channel("G\($0)-1")]) }
-
-        let sections = CarPlayTemplates.homeSections(groups: groups,
-                                                    channels: channels,
-                                                    owner: nil,
-                                                    prefersVideo: false)
-
-        let itemCount = sections.reduce(0) { $0 + $1.items.count }
-        XCTAssertLessThanOrEqual(itemCount, CPListTemplate.maximumItemCount,
-                                 "the car would drop the rest without a word")
-        XCTAssertLessThanOrEqual(sections.count, CPListTemplate.maximumSectionCount)
-    }
 
     // MARK: - The relay
 
@@ -523,25 +449,7 @@ final class ReviewRegressionTests: XCTestCase {
                 groupTitle: group)
     }
 
-    /// Records what a row on the car asked the app to do.
-    private final class SpyActions: CarPlayTabActions {
-        var pushed: [(title: String, channels: [Channel])] = []
 
-        func play(channel: Channel) {}
-        func pushChannels(title: String, channels: [Channel]) { pushed.append((title, channels)) }
-        func pushCategories(title: String, categories: [ChannelGroup]) {}
-        func pushChannelSearch() {}
-        func togglePicture() {}
-        func togglePlayback() {}
-        func startScreenShare() {}
-        func stopScreenShare() {}
-        func openBrowser(url: URL?) {}
-        func closeBrowser() {}
-        func pushBrowserAddressBar() {}
-        func pushCurrentPageLinks() {}
-        func pushCurrentPageInputs() {}
-        func openOnPhone(address: String) {}
-    }
 }
 
 /// A Jellyfin server that answers out of the test itself.

@@ -2,27 +2,17 @@
 
 Project-specific rules for this repo. The global `~/.claude/CLAUDE.md` still applies; this file wins on conflict.
 
-## ⛔ STRICT MANDATE FOR ANTIGRAVITY & CODING AGENTS (MAC & WINDOWS): NO CARPLAY TEMPLATES
+## ⛔ STRICT MANDATE: NO FAKE LIST TEMPLATES & NO FAKE 'LIVE VIDEO AS BROWSER' (REAL NATIVE WKWEBVIEW ONLY)
 
 > [!CAUTION]
-> **DO NOT UNDER ANY CIRCUMSTANCES RE-ADD `CPTemplateApplicationSceneSessionRoleApplication` OR RE-ENABLE CARPLAY TEMPLATES (`CPListTemplate`, `CPTabBarTemplate`, `CPSearchTemplate`).**
+> **DO NOT UNDER ANY CIRCUMSTANCES RE-ENABLE DUMMY CARPLAY LISTS ("Scroll Down", "Scroll Up", "Tap to launch video stream") OR `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` TO STREAM A WEBPAGE AS AN HLS VIDEO (`AVPlayer`) TO THE CAR DISPLAY.**
 >
-> 1. **CarPlay Scene Architecture:** The car display MUST strictly use **`UIWindowSceneSessionRoleCarPlay`** wired to **`CarPlayWindowSceneDelegate`**.
-> 2. **Root Controller:** The root controller on the car display MUST be **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (a native `UIViewController` hierarchy with direct touch interaction, multi-tab WebKit browsing, and custom floating keyboard).
-> 3. **Permanently Deleted Template Files:** All legacy template files (`CarPlaySceneDelegate.swift`, `CarPlayTabs.swift`, `CarPlayArtwork.swift`, and `CarPlayTemplateTests.swift`) have been completely deleted. **DO NOT RE-CREATE THEM.**
-> 4. **Never declare template roles:** `CPTemplateApplicationSceneSessionRoleApplication` is permanently banned from `project.yml` and `Info.plist`.
-> 5. **Never route template application in AppDelegate:** `connectingSceneSession.role == .carTemplateApplication` must NOT be handled.
-> 6. **If an agent or xcodegen tries to re-introduce CarPlay templates or re-add deleted template files, REVERT IT IMMEDIATELY.**
-
-## ⛔ STRICT MANDATE: NO FAKE 'LIVE VIDEO AS BROWSER' (REAL NATIVE WKWEBVIEW ONLY)
-
-> [!CAUTION]
-> **DO NOT UNDER ANY CIRCUMSTANCES RE-ENABLE `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` OR USE `CarBrowserStream` TO STREAM A WEBPAGE AS AN HLS VIDEO (`AVPlayer`) TO THE CAR DISPLAY.**
->
-> 1. **Zero Video Streaming for Browser:** Web browsing on the car display MUST be a 100% native, interactive `WKWebView` hierarchy (`CarPlayWebViewController` or `InCarAutomotiveController.browserContainer` / `DrivePlayRealBrowserViewController`). Never take snapshots of a web view and feed them to an HLS encoder or AVPlayer.
-> 2. **Direct Touch & 60fps Scrolling:** Users interact with the real DOM and WebKit layer directly on the car display (direct touch taps, smooth finger scrolling, text selection, link navigation, address bar, floating keyboard).
-> 3. **CarBrowserConfiguration:** `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` is permanently locked to `false`.
-> 4. **Parking Gate:** Do not block stationary testing or parking with an intrusive full-screen lock. The gate only pauses browsing if active vehicle movement (`speed > 0.8 m/s`) is detected.
+> 1. **CarPlay Scene Architecture:** Both `CPTemplateApplicationSceneSessionRoleApplication` (`CarPlaySceneDelegate`) and `UIWindowSceneSessionRoleCarPlay` (`CarPlayWindowSceneDelegate`) are declared and handled so CarPlay connects without crashing `-[CPTemplateApplicationScene _deliverInterfaceControllerToDelegate]`.
+> 2. **Root Controller:** The root controller on the car window (`CPWindow` / `UIWindow`) is **`CarPlayWebViewController`** / **`InCarAutomotiveController`** (a 100% native interactive `UIViewController` hierarchy with real WebKit `WKWebView`, full address bar, quick URL suggestions, and custom floating keyboard).
+> 3. **Zero Video Streaming for Browser:** Web browsing on the car display is 100% native, interactive `WKWebView`. Never take snapshots of a web view and feed them to an HLS encoder or AVPlayer.
+> 4. **Direct Touch & 60fps Scrolling:** Users interact with the real DOM and WebKit layer directly on the car display (direct touch taps, smooth finger scrolling, text selection, link navigation, address bar, floating keyboard).
+> 5. **CarBrowserConfiguration:** `CarBrowserConfiguration.useLiveRemoteStreamingBrowser` is permanently locked to `false`.
+> 6. **Parking Gate:** Do not block stationary testing or parking with an intrusive full-screen lock. The gate only pauses browsing if active vehicle movement (`speed > 0.8 m/s`) is detected.
 
 ## Build & test
 

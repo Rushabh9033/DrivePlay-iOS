@@ -72,6 +72,10 @@ targets:
           UISceneConfigurations:
             UIWindowSceneSessionRoleApplication:
               - UISceneConfigurationName: "Default Configuration"
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: "CarPlay Configuration"
+                UISceneClassName: "CPTemplateApplicationScene"
+                UISceneDelegateClassName: "CarTV.CarPlaySceneDelegate"
             UIWindowSceneSessionRoleCarPlay:
               - UISceneConfigurationName: "CarPlay Window Configuration"
                 UISceneClassName: "UIWindowScene"

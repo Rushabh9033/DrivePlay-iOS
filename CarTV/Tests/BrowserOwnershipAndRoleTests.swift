@@ -73,14 +73,7 @@ final class BrowserOwnershipAndRoleTests: XCTestCase {
         XCTAssertFalse(share.isWaitingForBroadcast, "Car page request must not start screen relay listener")
     }
 
-    func test_carplay_tabs_honest_naming_and_icons() {
-        let tabs = CarPlayTab.allCases
-        XCTAssertEqual(tabs.map(\.rawValue), ["Home", "Favorites", "Cast", "Browser"])
-        XCTAssertEqual(CarPlayTab.home.symbol, "house.fill")
-        XCTAssertEqual(CarPlayTab.favorites.symbol, "heart.fill")
-        XCTAssertEqual(CarPlayTab.cast.symbol, "airplayvideo")
-        XCTAssertEqual(CarPlayTab.browser.symbol, "globe")
-    }
+
 
     // MARK: - Experimental CarPlay Window Scene Browser Tests
 

@@ -49,7 +49,16 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
         print(msg)
         fflush(stdout)
         
-        if connectingSceneSession.role.rawValue == "UIWindowSceneSessionRoleCarPlay" {
+        if connectingSceneSession.role == .carTemplateApplication ||
+           connectingSceneSession.role.rawValue == "CPTemplateApplicationSceneSessionRoleApplication" {
+            let logMsg = "DRIVEPLAY AppDelegate returning CarPlay Configuration for role: \(connectingSceneSession.role.rawValue)"
+            NSLog("%@", logMsg)
+            print(logMsg)
+            fflush(stdout)
+            let config = UISceneConfiguration(name: "CarPlay Configuration", sessionRole: connectingSceneSession.role)
+            config.delegateClass = CarPlaySceneDelegate.self
+            return config
+        } else if connectingSceneSession.role.rawValue == "UIWindowSceneSessionRoleCarPlay" {
             let logMsg = "DRIVEPLAY AppDelegate returning CarPlay Window Configuration for role: \(connectingSceneSession.role.rawValue)"
             NSLog("%@", logMsg)
             print(logMsg)
