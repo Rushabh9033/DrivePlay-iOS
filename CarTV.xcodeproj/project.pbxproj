@@ -84,6 +84,7 @@
 		A167DD1221D3875DACEE8284 /* JellyfinClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4AE88FFCB1EC919FAF3419B /* JellyfinClient.swift */; };
 		A20C2D15838AE9A2EFD0142C /* AppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B20E382D8296E372FE9BD5 /* AppearanceTests.swift */; };
 		A706FDD9B65E321C86A890B7 /* CarPlayVideoViewController+Content.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF484C37D3FE08D563026C32 /* CarPlayVideoViewController+Content.swift */; };
+		A7B51D910465EB7877BC30A2 /* CarPlayTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 236B0BE20241265048A4A8F8 /* CarPlayTabs.swift */; };
 		A934654E0D0930631C75504C /* ScreenShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B906211FA7DF1F6F8BC05D78 /* ScreenShareTests.swift */; };
 		AD3A325EC05063F456BAD3A6 /* XtreamParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FD0A07664356B358F393C2D /* XtreamParser.swift */; };
 		AE44785953F14D21E12C013C /* CarBrowserStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A67435E6ACF4626B8E61C10 /* CarBrowserStream.swift */; };
@@ -97,6 +98,7 @@
 		B7A81B5047F206198BB0DB48 /* GroupDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B22AB55A1EC68C09EC4B4C5 /* GroupDetailView.swift */; };
 		BCCAEED6A5F788AA719D489A /* CarTV.storekit in Resources */ = {isa = PBXBuildFile; fileRef = B04D663F78327D6817C544B8 /* CarTV.storekit */; };
 		C05D60950F3CFD0D2B8B3372 /* PlaybackManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A10109C3458DADC040B263 /* PlaybackManager.swift */; };
+		CAAD18FA599CF8B8E75468CF /* CarPlayArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6808BDD3276867769367E1 /* CarPlayArtwork.swift */; };
 		CE616D22FAFC4FEAA07FACD2 /* SatelliteHUDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB9B0137AC77B6CC7D43240 /* SatelliteHUDTests.swift */; };
 		D11066412A85061DF17D1E4E /* SourceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 575210B369C0B9576CE3DEC7 /* SourceDetailView.swift */; };
 		D3A3A2EA29A43A576C45E134 /* LocalMediaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21681C21A2F7D62896BE5AEB /* LocalMediaService.swift */; };
@@ -175,6 +177,7 @@
 		210A2E7D0AA4618E2DFC0435 /* PlaybackManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackManagerTests.swift; sourceTree = "<group>"; };
 		21681C21A2F7D62896BE5AEB /* LocalMediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMediaService.swift; sourceTree = "<group>"; };
 		231DC0DC66994EE2D1046B8E /* AudioExtractorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioExtractorService.swift; sourceTree = "<group>"; };
+		236B0BE20241265048A4A8F8 /* CarPlayTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayTabs.swift; sourceTree = "<group>"; };
 		23F1C78A0A23EE8F81EB3BB1 /* AddSourceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddSourceSheet.swift; sourceTree = "<group>"; };
 		2433D3EF7969F48DE3C1EEC6 /* CarDisplaySessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarDisplaySessionTests.swift; sourceTree = "<group>"; };
 		25C0B8773D23A98BA97BE2A0 /* CarPlayVideoViewController+TopBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CarPlayVideoViewController+TopBar.swift"; sourceTree = "<group>"; };
@@ -212,6 +215,7 @@
 		74122A44110E1D3A6DB2005A /* LiveScreenStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveScreenStream.swift; sourceTree = "<group>"; };
 		7A96AFCF5FB3A49B2863EC5F /* DockedPlayerContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DockedPlayerContainerView.swift; sourceTree = "<group>"; };
 		7E9182E61A603727B6BC9776 /* ChannelCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelCardView.swift; sourceTree = "<group>"; };
+		7F6808BDD3276867769367E1 /* CarPlayArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayArtwork.swift; sourceTree = "<group>"; };
 		85AA6503ABF7F5066348E67C /* OfflineMediaThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineMediaThumbnailView.swift; sourceTree = "<group>"; };
 		85B1F10DAB0C006DCCB3146E /* PlaylistSwitchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistSwitchSheet.swift; sourceTree = "<group>"; };
 		8614D3F9C24C17BBC8CB3D61 /* CarTV.audio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarTV.audio.entitlements; sourceTree = "<group>"; };
@@ -409,7 +413,9 @@
 			isa = PBXGroup;
 			children = (
 				1449E33A3D03DE0463D4359E /* CarModeDashboardView.swift */,
+				7F6808BDD3276867769367E1 /* CarPlayArtwork.swift */,
 				9331A4A468E6F9D44663B1B4 /* CarPlayFloatingKeyboardView.swift */,
+				236B0BE20241265048A4A8F8 /* CarPlayTabs.swift */,
 				0FFC623BC9071E7CCC11EB1C /* ChannelListViewController.swift */,
 				A04CAD4C2764BB42458EC607 /* SatelliteHUDView.swift */,
 			);
@@ -678,8 +684,10 @@
 				2ECDBF1FE82139FEF7D197B2 /* CarDisplaySession.swift in Sources */,
 				4700F1CF03724B4C0023C46A /* CarModeDashboardView.swift in Sources */,
 				26CB08A0D537030099356AD4 /* CarOutputSwitch.swift in Sources */,
+				CAAD18FA599CF8B8E75468CF /* CarPlayArtwork.swift in Sources */,
 				DC2B5CC23A1F217BFE891021 /* CarPlayFloatingKeyboardView.swift in Sources */,
 				81C5059D7B6FEE76E9E2F904 /* CarPlaySceneDelegate.swift in Sources */,
+				A7B51D910465EB7877BC30A2 /* CarPlayTabs.swift in Sources */,
 				84665A97E8FFE9C083D1F80C /* CarPlayVideoViewController+Actions.swift in Sources */,
 				E7EBDF312439ADB7EE792676 /* CarPlayVideoViewController+Browser.swift in Sources */,
 				A706FDD9B65E321C86A890B7 /* CarPlayVideoViewController+Content.swift in Sources */,
