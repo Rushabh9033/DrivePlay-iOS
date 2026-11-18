@@ -91,6 +91,58 @@ DrivePlay
 
 ---
 
+## 🚀 Latest Updates (November 18, 2026) & Mac Migration Guide
+
+This repository has been fully upgraded with cross-platform SwiftPM support, in-car browser enhancements, and CarPlay scene configurations.
+
+### 1. Summary of Changes Made Today
+* **CarPlay SpringBoard Registration:** Restored `CPTemplateApplicationSceneSessionRoleApplication` pointing to `CarPlaySceneDelegate` and bound the scene name `"CarPlay Configuration"` in `AppDelegate.swift` and `project.yml`. This resolves the issue where DrivePlay was missing from the CarPlay app grid and `Settings → General → CarPlay → Customize`.
+* **Dynamic Multi-Tab Streaming Routing:** Refactored `CarBrowserStream.swift` to route snapshots and commands through a dynamic `activeWebView` property, properly handling `openNewTab`, `switchToTab`, and `closeTab`.
+* **Snapshot Memory Leak Fix:** Wrapped the 15 fps WebKit snapshot capture loop inside an `autoreleasepool { ... }` block to prevent CIImage/UIImage memory bloat during prolonged vehicle streaming.
+* **JavaScript Input Escaping:** Hardened character escaping for JavaScript string injections in `enterText` and `setFieldValue` to prevent syntax errors during address and search queries.
+* **Handset Window Scene & App Icon Delivery:** Declared `UIWindowSceneSessionRoleApplication` in `UIApplicationSceneManifest` and bundled `AppIcon.png` so SpringBoard renders the native application icon cleanly on the phone.
+* **External Automotive Display Integration:** Attached `CarDisplaySession.shared` in `ExternalDisplaySceneDelegate.swift` and conformed `InCarAutomotiveController: CarBrowserScreen` for secondary screen support.
+* **Cross-Platform SwiftPM Tooling:** Introduced `Package.swift` and `xtool.yml` to support headless SwiftPM builds (`xtool`) on Windows/Linux while maintaining full compatibility with Xcode (`project.yml`).
+* **Robust M3U URL Parsing:** Added percent-encoding fallback to `M3UParser.swift` to handle stream URLs with unencoded spaces.
+
+### 2. Mac Migration Quick-Start Instructions
+
+When cloning or pulling this code to your **Mac**:
+
+1. **Prerequisites on Mac:**
+   ```bash
+   brew install xcodegen
+   ```
+
+2. **Regenerate the Xcode Project:**
+   `project.yml` is the single source of truth for `CarTV.xcodeproj` and `Info.plist`. Run this immediately after pulling:
+   ```bash
+   xcodegen generate
+   ```
+
+3. **Check Code Signing & Entitlements:**
+   * In Xcode, select the `CarTV` target → **Signing & Capabilities**.
+   * Ensure Development Team is set to **`47T499AR2T`** (which carries the official Apple-granted `com.apple.developer.carplay-video` capability).
+   * Confirm the entitlements file points to `CarTV/Resources/CarTV.video.entitlements`.
+
+4. **Compile Check (No Simulator Booted):**
+   ```bash
+   xcodebuild -project CarTV.xcodeproj -scheme CarTV \
+     -destination 'generic/platform=iOS' -configuration Debug \
+     CARPLAY_CATEGORY=video build-for-testing
+   ```
+
+5. **Run Suite on Physical iPhone 13 (`00008110-001C60423CB8401E`):**
+   ```bash
+   scripts/device_test.sh
+   ```
+
+6. **CarPlay Simulator on Mac:**
+   * Xcode's CarPlay Simulator is located at `/Users/radhikamac/Desktop/CarPlay Simulator.app` (or launchable via Xcode Device Hub).
+   * *Note:* In Xcode 27, the CarPlay Simulator hosts physical devices only. Connect your iPhone via USB or Wi-Fi, unlock the phone, and launch the CarPlay Simulator.
+
+---
+
 ## License
 
 All rights reserved. Proprietary software developed for DrivePlay / CarTV.

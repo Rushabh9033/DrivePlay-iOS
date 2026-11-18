@@ -33,6 +33,7 @@ targets:
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleShortVersionString: "1.2.0"
         CFBundleVersion: "1"
+        CFBundleIconFile: "AppIcon"
         # The CarPlay category this build carries. The app only asks CarPlay for
         # video when it is signed with the video entitlement.
         CarPlayCategory: $(CARPLAY_CATEGORY)
@@ -68,6 +69,11 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: "Default Configuration"
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: "CarPlay Configuration"
+                UISceneDelegateClassName: "CarTV.CarPlaySceneDelegate"
             UIWindowSceneSessionRoleCarPlay:
               - UISceneConfigurationName: "CarPlay Window Configuration"
                 UISceneClassName: "UIWindowScene"
